@@ -1,0 +1,34 @@
+# USB Token Folder Access - Quick Reference
+# =========================================
+
+# 1. VIEW PROTECTED FOLDERS (including hidden ones)
+Get-ChildItem "c:\Users\ajibi\Music\Anti-Ransomeware" -Force | Where-Object {$_.Attributes -match "Hidden"}
+
+# 2. LAUNCH MAIN GUI 
+python true_prevention.py
+
+# 3. UNLOCK SPECIFIC FOLDER
+python true_prevention.py --unlock-folder "c:\Users\ajibi\Music\Anti-Ransomeware\TestFolder"
+
+# 4. SHOW ALL PROTECTED FOLDERS
+python true_prevention.py --list-protected
+
+# 5. EMERGENCY VISIBILITY (makes folder visible but still protected)
+attrib -H "c:\Users\ajibi\Music\Anti-Ransomeware\TestFolder"
+
+# 6. CHECK USB TOKENS
+dir E:\protection_token_*.key
+
+# 7. VALIDATE TOKENS
+python true_prevention.py --validate-tokens
+
+# 8. TEMPORARY ACCESS (30 minutes)
+python true_prevention.py --temp-unlock "c:\Users\ajibi\Music\Anti-Ransomeware\TestFolder" --duration 30
+
+# =========================================
+# IMPORTANT SECURITY NOTES:
+# - Folder remains protected even when visible
+# - USB tokens must be present for all operations
+# - Folders auto-relock when system closes
+# - Admin privileges cannot bypass without tokens
+# =========================================

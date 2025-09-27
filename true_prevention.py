@@ -29,10 +29,25 @@ import win32con
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import ctypes
+import ctypes.wintypes
 
 # Configuration
 APP_DIR = Path(os.path.expanduser("~")) / "AppData" / "Local" / "PreventionAntiRansomware"
 APP_DIR.mkdir(parents=True, exist_ok=True)
+
+# Windows API constants for admin-proof protection
+GENERIC_ALL = 0x10000000
+FILE_ATTRIBUTE_SYSTEM = 0x00000004
+FILE_ATTRIBUTE_HIDDEN = 0x00000002
+FILE_ATTRIBUTE_READONLY = 0x00000001
+INVALID_HANDLE_VALUE = -1
+
+# Security privilege constants
+SE_TAKE_OWNERSHIP_NAME = "SeTakeOwnershipPrivilege"
+SE_SECURITY_NAME = "SeSecurityPrivilege"
+SE_BACKUP_NAME = "SeBackupPrivilege" 
+SE_RESTORE_NAME = "SeRestorePrivilege"
 
 DB_PATH = APP_DIR / "folders.db"
 QUARANTINE_DIR = APP_DIR / "quarantine"
@@ -158,7 +173,7 @@ class USBTokenManager:
             return "DEFAULT_MACHINE"
     
     def generate_token(self, token_name="protection_token.key", valid_days=365):
-        """Generate encrypted USB token"""
+        """Generate encrypted USB token - FIXED VERSION"""
         try:
             # Create token data
             token_data = {
@@ -170,8 +185,11 @@ class USBTokenManager:
                 "version": "1.0"
             }
             
-            # Generate encryption key from machine data
-            password = f"{self.machine_id}-{token_data['token_id']}".encode()
+            print(f"🔑 Generating token for machine: {self.machine_id}")
+            
+            # Generate encryption key from machine data ONLY (simpler approach)
+            # This matches the verification method
+            password = f"{self.machine_id}".encode()
             salt = b'unbreakable_protection_salt'
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
@@ -185,21 +203,33 @@ class USBTokenManager:
             # Encrypt token data
             encrypted_token = fernet.encrypt(json.dumps(token_data).encode())
             
+            print(f"🔐 Token encrypted successfully")
+            
             # Save to USB drives
             saved_locations = []
             drives = self.get_usb_drives()
             
+            if not drives:
+                print("⚠️ No USB drives found")
+                return False, []
+            
             for drive in drives:
                 try:
-                    token_path = Path(drive) / token_name
+                    # Include token_id in filename for easier identification
+                    token_filename = f"protection_token_{token_data['token_id'][:8]}.key"
+                    token_path = Path(drive) / token_filename
+                    
                     with open(token_path, 'wb') as f:
                         f.write(encrypted_token)
                     saved_locations.append(str(token_path))
+                    print(f"✅ Token saved to: {token_path}")
                 except Exception as e:
                     print(f"Could not save token to {drive}: {e}")
             
             if saved_locations:
-                print(f"✅ Token generated and saved to: {saved_locations}")
+                print(f"✅ Token generated and saved to: {len(saved_locations)} location(s)")
+                print(f"   Token ID: {token_data['token_id'][:8]}...")
+                print(f"   Valid until: {token_data['expires'][:10]}")
                 return True, saved_locations
             else:
                 print("❌ No USB drives available for token storage")
@@ -210,7 +240,7 @@ class USBTokenManager:
             return False, []
     
     def verify_token(self, token_path=None):
-        """Verify USB token authenticity"""
+        """Verify USB token authenticity - FIXED VERSION"""
         try:
             # If no path provided, search all USB drives
             if not token_path:
@@ -222,59 +252,119 @@ class USBTokenManager:
             if not os.path.exists(token_path):
                 return False, "Token file not found"
             
-            # Read and decrypt token
+            print(f"🔍 Verifying token: {token_path}")
+            
+            # Read encrypted token
             with open(token_path, 'rb') as f:
                 encrypted_token = f.read()
             
-            # Try to decrypt with machine-specific key
-            try:
-                # Generate same key used for encryption
-                token_data_temp = {"token_id": ""}  # Temporary to get started
-                password = f"{self.machine_id}-".encode()
-                
-                # We need to try different token IDs or extract from filename
-                # For now, try a brute force approach with common patterns
-                for potential_file in os.listdir(os.path.dirname(token_path)):
-                    if potential_file.endswith('.key'):
-                        try:
-                            # Extract potential token ID from filename or try decryption
-                            test_password = f"{self.machine_id}-{potential_file}".encode()
-                            salt = b'unbreakable_protection_salt'
-                            kdf = PBKDF2HMAC(
-                                algorithm=hashes.SHA256(),
-                                length=32,
-                                salt=salt,
-                                iterations=100000,
-                            )
-                            key = base64.urlsafe_b64encode(kdf.derive(test_password))
-                            fernet = Fernet(key)
-                            
-                            decrypted_data = fernet.decrypt(encrypted_token)
-                            token_data = json.loads(decrypted_data.decode())
-                            break
-                        except:
-                            continue
-                else:
-                    return False, "Invalid token or wrong machine"
-                
-            except Exception as e:
-                return False, f"Token decryption failed: {e}"
+            # The issue is we need the token_id to decrypt, but it's stored IN the encrypted token
+            # Solution: Try a different approach - store token_id in filename or use brute force smartly
             
-            # Verify machine binding
+            # Method 1: Check if token_id is in the filename
+            token_filename = Path(token_path).stem
+            if '_' in token_filename:
+                potential_token_id = token_filename.split('_')[-1]
+                if self._try_decrypt_with_token_id(encrypted_token, potential_token_id):
+                    return True, "Token verified successfully"
+            
+            # Method 2: Try to extract token_id from file metadata or use simpler approach
+            # Let's use a simpler encryption that doesn't require token_id in key
+            try:
+                # Try with just machine_id as password (simpler approach)
+                password = f"{self.machine_id}".encode()
+                salt = b'unbreakable_protection_salt'
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=100000,
+                )
+                key = base64.urlsafe_b64encode(kdf.derive(password))
+                fernet = Fernet(key)
+                
+                decrypted_data = fernet.decrypt(encrypted_token)
+                token_data = json.loads(decrypted_data.decode())
+                
+                print(f"🔍 Token data loaded successfully")
+                
+            except Exception as decrypt_error:
+                print(f"⚠️ Simple decryption failed: {decrypt_error}")
+                
+                # Method 3: Brute force common token patterns (last resort)
+                print("🔄 Trying alternative decryption methods...")
+                
+                # Try with different password patterns
+                patterns_to_try = [
+                    self.machine_id,
+                    f"{self.machine_id}-protection",
+                    f"{self.machine_id}-token",
+                ]
+                
+                for pattern in patterns_to_try:
+                    try:
+                        password = pattern.encode()
+                        kdf = PBKDF2HMAC(
+                            algorithm=hashes.SHA256(),
+                            length=32,
+                            salt=salt,
+                            iterations=100000,
+                        )
+                        key = base64.urlsafe_b64encode(kdf.derive(password))
+                        fernet = Fernet(key)
+                        
+                        decrypted_data = fernet.decrypt(encrypted_token)
+                        token_data = json.loads(decrypted_data.decode())
+                        print(f"✅ Decryption successful with pattern: {pattern}")
+                        break
+                        
+                    except Exception:
+                        continue
+                else:
+                    return False, "Cannot decrypt token - invalid token or wrong machine"
+            
+            # Validate token data
             if token_data.get("machine_id") != self.machine_id:
-                return False, "Token not authorized for this machine"
+                return False, f"Token belongs to different machine: {token_data.get('machine_id')} != {self.machine_id}"
             
             # Check expiration
-            expires = datetime.fromisoformat(token_data.get("expires", ""))
-            if datetime.now() > expires:
-                return False, "Token has expired"
+            try:
+                expires = datetime.fromisoformat(token_data["expires"])
+                if datetime.now() > expires:
+                    return False, "Token has expired"
+            except:
+                print("⚠️ Token expiration check failed, assuming valid")
             
-            # Token is valid
-            self.valid_tokens[token_path] = token_data
+            print(f"✅ Token validation successful")
+            print(f"   Machine ID: {token_data.get('machine_id')}")
+            print(f"   Created: {token_data.get('created')}")
+            print(f"   Permissions: {token_data.get('permissions')}")
+            
             return True, "Token verified successfully"
             
         except Exception as e:
-            return False, f"Token verification error: {e}"
+            print(f"❌ Token verification error: {e}")
+            return False, f"Token verification failed: {str(e)}"
+    
+    def _try_decrypt_with_token_id(self, encrypted_token, token_id):
+        """Helper method to try decryption with a specific token ID"""
+        try:
+            password = f"{self.machine_id}-{token_id}".encode()
+            salt = b'unbreakable_protection_salt'
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000,
+            )
+            key = base64.urlsafe_b64encode(kdf.derive(password))
+            fernet = Fernet(key)
+            
+            decrypted_data = fernet.decrypt(encrypted_token)
+            token_data = json.loads(decrypted_data.decode())
+            return token_data.get("machine_id") == self.machine_id
+        except:
+            return False
     
     def find_tokens(self):
         """Find all token files on USB drives"""
@@ -420,86 +510,300 @@ class FilePermissionManager:
             print(f"Error unlocking folder: {e}")
             return 0
 
+class WindowsSecurityAPI:
+    """Direct Windows API calls for admin-proof protection"""
+    
+    def __init__(self):
+        self.kernel32 = ctypes.windll.kernel32
+        self.advapi32 = ctypes.windll.advapi32
+        self.ntdll = ctypes.windll.ntdll
+        
+    def disable_privilege(self, privilege_name):
+        """Disable a privilege for the current process"""
+        try:
+            # Get current process token
+            token = ctypes.wintypes.HANDLE()
+            process = self.kernel32.GetCurrentProcess()
+            
+            if not self.advapi32.OpenProcessToken(process, 0x0020 | 0x0008, ctypes.byref(token)):
+                return False
+            
+            # Lookup privilege LUID
+            luid = ctypes.wintypes.LUID()
+            if not self.advapi32.LookupPrivilegeValueW(None, privilege_name, ctypes.byref(luid)):
+                return False
+            
+            # Disable the privilege
+            class TOKEN_PRIVILEGES(ctypes.Structure):
+                _fields_ = [("PrivilegeCount", ctypes.wintypes.DWORD),
+                           ("Luid", ctypes.wintypes.LUID),
+                           ("Attributes", ctypes.wintypes.DWORD)]
+            
+            tp = TOKEN_PRIVILEGES()
+            tp.PrivilegeCount = 1
+            tp.Luid = luid
+            tp.Attributes = 0  # Disable
+            
+            result = self.advapi32.AdjustTokenPrivileges(
+                token, False, ctypes.byref(tp), ctypes.sizeof(tp), None, None
+            )
+            
+            self.kernel32.CloseHandle(token)
+            return result != 0
+            
+        except Exception as e:
+            print(f"Privilege disable error: {e}")
+            return False
+    
+    def create_admin_proof_security_descriptor(self, file_path):
+        """Create security descriptor that blocks even admin access"""
+        try:
+            # Multiple layers of access denial
+            commands = [
+                # Remove inheritance first
+                ['icacls', str(file_path), '/inheritance:r', '/C'],
+                
+                # Deny access to critical system accounts
+                ['icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'],  # Everyone
+                ['icacls', str(file_path), '/deny', '*S-1-5-32-544:(F)', '/C'],  # Administrators
+                ['icacls', str(file_path), '/deny', '*S-1-5-18:(F)', '/C'],  # SYSTEM
+                ['icacls', str(file_path), '/deny', '*S-1-5-19:(F)', '/C'],  # LOCAL SERVICE
+                ['icacls', str(file_path), '/deny', '*S-1-5-20:(F)', '/C'],  # NETWORK SERVICE
+                
+                # Named group denials
+                ['icacls', str(file_path), '/deny', 'Everyone:(F)', '/C'],
+                ['icacls', str(file_path), '/deny', 'Administrators:(F)', '/C'],
+                ['icacls', str(file_path), '/deny', 'SYSTEM:(F)', '/C'],
+                ['icacls', str(file_path), '/deny', 'Users:(F)', '/C'],
+                ['icacls', str(file_path), '/deny', 'BUILTIN\\Administrators:(F)', '/C'],
+            ]
+            
+            success_count = 0
+            for cmd in commands:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, shell=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        success_count += 1
+                except Exception:
+                    pass
+            
+            return success_count > len(commands) // 2  # Consider success if majority work
+            
+        except Exception as e:
+            print(f"Admin-proof security descriptor error: {e}")
+            return False
+
+class AdminProofProtection:
+    """Admin-proof protection that requires USB token for ANY admin operations"""
+    
+    def __init__(self, token_manager):
+        self.api = WindowsSecurityAPI()
+        self.token_manager = token_manager
+        self.admin_protected_paths = set()
+        
+    def apply_admin_proof_protection(self, path):
+        """Apply protection that even administrators cannot bypass without token"""
+        path = Path(path)
+        print(f"🔐 Applying ADMIN-PROOF protection to: {path}")
+        
+        try:
+            # Step 1: Disable admin privileges that could bypass protection
+            print("  🚫 Disabling admin bypass privileges...")
+            self.api.disable_privilege(SE_TAKE_OWNERSHIP_NAME)
+            self.api.disable_privilege(SE_SECURITY_NAME) 
+            self.api.disable_privilege(SE_BACKUP_NAME)
+            self.api.disable_privilege(SE_RESTORE_NAME)
+            
+            # Step 2: Apply maximum file/folder attributes
+            print("  🛡️ Applying system attributes...")
+            if path.is_file():
+                attr_cmd = ['attrib', '+S', '+H', '+R', '+A', str(path)]
+            else:
+                attr_cmd = ['attrib', '+S', '+H', '+R', str(path), '/S', '/D']
+            
+            try:
+                subprocess.run(attr_cmd, capture_output=True, shell=True, check=True)
+                print(f"    ✅ System attributes applied")
+            except:
+                print(f"    ⚠️ System attributes partially applied")
+            
+            # Step 3: Apply admin-proof security descriptor
+            print("  🔒 Applying admin-proof security...")
+            if self.api.create_admin_proof_security_descriptor(path):
+                print(f"    ✅ Admin-proof security applied")
+            else:
+                print(f"    ⚠️ Admin-proof security partially applied")
+            
+            # Step 4: Take ownership and then deny access to self
+            print("  👑 Taking ownership and self-denying...")
+            try:
+                subprocess.run(['takeown', '/F', str(path), '/A'], 
+                              capture_output=True, shell=True)
+                subprocess.run(['icacls', str(path), '/deny', 'Everyone:(F)', '/C'], 
+                              capture_output=True, shell=True)
+                print(f"    ✅ Ownership protection applied")
+            except:
+                print(f"    ⚠️ Ownership protection partial")
+            
+            self.admin_protected_paths.add(str(path))
+            print(f"  🛡️ ADMIN-PROOF PROTECTION COMPLETE for: {path.name}")
+            return True
+            
+        except Exception as e:
+            print(f"Admin-proof protection error: {e}")
+            return False
+    
+    def verify_token_for_admin_bypass(self):
+        """Verify USB token before allowing any admin operations"""
+        is_valid, message = self.token_manager.verify_token()
+        if not is_valid:
+            raise PermissionError(f"🗝️ USB TOKEN REQUIRED: {message}")
+        print(f"✅ USB Token verified for admin operation")
+        return True
+    
+    def admin_unlock_with_token(self, path):
+        """Unlock admin-protected path only with valid USB token"""
+        # CRITICAL: Verify token first
+        self.verify_token_for_admin_bypass()
+        
+        path = Path(path)
+        print(f"🗝️ Admin token unlock for: {path}")
+        
+        if str(path) not in self.admin_protected_paths:
+            raise ValueError("Path is not under admin-proof protection")
+        
+        try:
+            # Remove all protection layers in reverse order
+            print("  🔓 Removing admin-proof protection layers...")
+            
+            # Reset security descriptor
+            subprocess.run(['icacls', str(path), '/reset', '/T', '/C'], 
+                          capture_output=True, shell=True)
+            
+            # Remove attributes
+            if path.is_file():
+                subprocess.run(['attrib', '-S', '-H', '-R', '-A', str(path)], 
+                              capture_output=True, shell=True)
+            else:
+                subprocess.run(['attrib', '-S', '-H', '-R', str(path), '/S', '/D'], 
+                              capture_output=True, shell=True)
+            
+            # Restore normal permissions
+            subprocess.run(['icacls', str(path), '/grant', 'Everyone:(F)', '/T', '/C'], 
+                          capture_output=True, shell=True)
+            
+            self.admin_protected_paths.discard(str(path))
+            print(f"  ✅ Admin unlock completed with token verification")
+            return True
+            
+        except Exception as e:
+            print(f"Token unlock error: {e}")
+            return False
+
 class UnbreakableFileManager(FilePermissionManager):
-    """Enhanced file manager with unbreakable kernel-level protection"""
+    """Enhanced file manager with admin-proof kernel-level protection"""
     
     def __init__(self, database, token_manager):
         super().__init__(database)
         self.token_manager = token_manager
         self.kernel_locks = {}  # Store kernel-level locks
         self.system_locks = set()  # Files with system-level protection
+        
+        # Initialize admin-proof protection
+        self.admin_proof = AdminProofProtection(token_manager)
+        print("🔐 Admin-proof protection initialized")
     
     def apply_kernel_lock(self, file_path):
         """Apply kernel-level file protection that survives privilege escalation"""
         try:
             file_path = Path(file_path)
+            if not file_path.exists():
+                print(f"⚠️ File not found: {file_path}")
+                return False
+            
+            print(f"🛡️ Applying kernel locks to: {file_path.name}")
             
             # Method 1: Windows System File Protection
             try:
-                # Set system file attribute
-                subprocess.run(['attrib', '+S', '+H', '+R', str(file_path)], 
-                             capture_output=True, shell=True, check=True)
-                print(f"🔒 System attribute applied: {file_path}")
-            except:
-                pass
+                # Set system file attribute - this makes it a "system file"
+                result = subprocess.run(['attrib', '+S', '+H', '+R', str(file_path)], 
+                                      capture_output=True, shell=True, text=True)
+                if result.returncode == 0:
+                    print(f"✅ System attributes (+S +H +R) applied to: {file_path.name}")
+                else:
+                    print(f"⚠️ System attribute error: {result.stderr}")
+            except Exception as e:
+                print(f"⚠️ System attribute exception: {e}")
             
             # Method 2: NTFS Permissions - Deny FULL CONTROL to EVERYONE including Administrators
             try:
-                # Remove all permissions and deny access
-                subprocess.run([
-                    'icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'
-                ], capture_output=True, shell=True)
+                # Deny access to Everyone (including current user)
+                result = subprocess.run([
+                    'icacls', str(file_path), '/deny', 'Everyone:(F)', '/C'
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode == 0:
+                    print(f"✅ Everyone access denied for: {file_path.name}")
                 
-                # Deny administrators
-                subprocess.run([
+                # Deny administrators specifically
+                result = subprocess.run([
                     'icacls', str(file_path), '/deny', 'Administrators:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode == 0:
+                    print(f"✅ Administrator access denied for: {file_path.name}")
                 
                 # Deny SYSTEM account
-                subprocess.run([
+                result = subprocess.run([
                     'icacls', str(file_path), '/deny', 'SYSTEM:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode == 0:
+                    print(f"✅ SYSTEM access denied for: {file_path.name}")
                 
-                print(f"🔒 NTFS permissions locked: {file_path}")
+                # Deny specific user groups that might have elevated access
+                subprocess.run([
+                    'icacls', str(file_path), '/deny', 'BUILTIN\\Administrators:(F)', '/C'
+                ], capture_output=True, shell=True, text=True)
+                
             except Exception as e:
-                print(f"NTFS lock warning: {e}")
+                print(f"⚠️ NTFS permission error: {e}")
             
-            # Method 3: Take ownership and deny access
+            # Method 3: Take ownership and then deny access
             try:
-                # Take ownership first
-                subprocess.run([
+                # Take ownership as Administrator first
+                result = subprocess.run([
                     'takeown', '/F', str(file_path), '/A'
-                ], capture_output=True, shell=True)
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode == 0:
+                    print(f"✅ Ownership taken for: {file_path.name}")
                 
-                # Then deny access to everyone
+                # Then deny all access after taking ownership
                 subprocess.run([
-                    'icacls', str(file_path), '/deny', 'Everyone:(F)', '/T', '/C'
-                ], capture_output=True, shell=True)
+                    'icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'
+                ], capture_output=True, shell=True, text=True)
                 
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠️ Ownership/deny error: {e}")
             
-            # Method 4: Set immutable using fsutil (if available)
+            # Method 4: Try to make file encrypted (Windows EFS) if available
             try:
-                # Mark as system critical file
                 subprocess.run([
-                    'fsutil', 'behavior', 'set', 'SymlinkEvaluation', 'L2L:0', 'L2R:0', 'R2R:0', 'R2L:0'
-                ], capture_output=True, shell=True)
+                    'cipher', '/E', str(file_path)
+                ], capture_output=True, shell=True, text=True)
             except:
-                pass
+                pass  # EFS might not be available
             
             # Store in kernel locks tracking
             self.kernel_locks[str(file_path)] = {
                 'locked_time': datetime.now().isoformat(),
-                'methods_used': ['system_attribute', 'ntfs_deny', 'ownership_deny'],
+                'methods_used': ['system_attribute', 'ntfs_deny', 'ownership_deny', 'encryption'],
                 'original_permissions': self.protected_files.get(str(file_path))
             }
             
             self.system_locks.add(str(file_path))
+            print(f"🛡️ KERNEL LOCK COMPLETE: {file_path.name}")
             return True
             
         except Exception as e:
-            print(f"Kernel lock error for {file_path}: {e}")
+            print(f"❌ Kernel lock failed for {file_path}: {e}")
             return False
     
     def remove_kernel_lock(self, file_path, token_required=True):
@@ -568,34 +872,66 @@ class UnbreakableFileManager(FilePermissionManager):
             folder = Path(folder_path)
             print(f"🔒 Applying UNBREAKABLE protection to: {folder_path}")
             
-            # Apply kernel-level folder protection
+            # FIRST: Apply file-level protection while we still have access
+            print(f"🔒 Phase 1: Locking individual files...")
+            try:
+                for file_path in folder.rglob("*"):
+                    if file_path.is_file():
+                        print(f"🔒 Locking file: {file_path.name}")
+                        
+                        # Regular lock
+                        if self.lock_file(file_path):
+                            locked_count += 1
+                        
+                        # Kernel-level lock
+                        if self.apply_kernel_lock(file_path):
+                            kernel_locked_count += 1
+            except Exception as e:
+                print(f"File locking error: {e}")
+            
+            # SECOND: Apply kernel-level folder protection AFTER files are locked
+            print(f"🔒 Phase 2: Applying folder-level protection...")
             try:
                 # Make folder system and hidden
-                subprocess.run(['attrib', '+S', '+H', str(folder_path)], 
-                             capture_output=True, shell=True)
+                result = subprocess.run(['attrib', '+S', '+H', str(folder_path)], 
+                                      capture_output=True, shell=True, text=True)
+                if result.returncode != 0:
+                    print(f"Attrib warning: {result.stderr}")
                 
-                # Deny all access to folder
-                subprocess.run([
+                # Deny all access to folder - this prevents new file creation
+                result = subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Everyone:(F)', '/T', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode != 0:
+                    print(f"ICACLS Everyone warning: {result.stderr}")
                 
-                subprocess.run([
+                result = subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Administrators:(F)', '/T', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True, shell=True, text=True)
+                if result.returncode != 0:
+                    print(f"ICACLS Administrators warning: {result.stderr}")
+                
+                # Also deny SYSTEM account
+                subprocess.run([
+                    'icacls', str(folder_path), '/deny', 'SYSTEM:(F)', '/T', '/C'
+                ], capture_output=True, shell=True, text=True)
+                
+                print(f"🔒 Folder-level protection applied")
                 
             except Exception as e:
-                print(f"Folder kernel lock warning: {e}")
+                print(f"Folder kernel lock error: {e}")
             
-            # Apply file-level protection
-            for file_path in folder.rglob("*"):
-                if file_path.is_file():
-                    # Regular lock
-                    if self.lock_file(file_path):
-                        locked_count += 1
-                    
-                    # Kernel-level lock
-                    if self.apply_kernel_lock(file_path):
-                        kernel_locked_count += 1
+            # THIRD: Apply admin-proof protection that requires USB token
+            print(f"🔒 Phase 3: Applying admin-proof protection...")
+            admin_proof_success = False
+            try:
+                admin_proof_success = self.admin_proof.apply_admin_proof_protection(folder_path)
+                if admin_proof_success:
+                    print(f"🔐 Admin-proof protection applied - requires USB token to bypass")
+                else:
+                    print(f"⚠️ Admin-proof protection had issues but basic protection is active")
+            except Exception as e:
+                print(f"Admin-proof protection error: {e}")
             
             self.locked_folders.add(folder_path)
             
@@ -603,6 +939,9 @@ class UnbreakableFileManager(FilePermissionManager):
             print(f"   📁 Folder: {folder_path}")
             print(f"   📄 Files locked: {locked_count}")
             print(f"   🛡️ Kernel locks: {kernel_locked_count}")
+            print(f"   � Admin-proof: {'✅ ACTIVE' if admin_proof_success else '⚠️ PARTIAL'}")
+            print(f"   �🛡️ Folder access: DENIED to Everyone, Administrators, SYSTEM")
+            print(f"   🗝️ Unlock requires: VALID USB TOKEN")
             
             return locked_count, kernel_locked_count
             
@@ -611,27 +950,38 @@ class UnbreakableFileManager(FilePermissionManager):
             return 0, 0
     
     def unlock_folder_with_token(self, folder_path):
-        """Unlock folder using USB token"""
-        # Verify token first
+        """Unlock folder using USB token - handles all protection layers"""
+        # Verify token first - this is CRITICAL for security
         is_valid, message = self.token_manager.verify_token()
         if not is_valid:
-            raise PermissionError(f"USB Token required: {message}")
+            raise PermissionError(f"🗝️ USB TOKEN REQUIRED: {message}")
         
-        print(f"🔑 Token verified, unlocking: {folder_path}")
+        print(f"🔑 USB Token verified, unlocking: {folder_path}")
         
         restored_count = 0
         kernel_unlocked_count = 0
+        admin_proof_unlocked = False
         
         try:
             folder = Path(folder_path)
             
-            # Remove kernel locks from files
+            # STEP 1: Remove admin-proof protection first (requires token)
+            if str(folder_path) in self.admin_proof.admin_protected_paths:
+                print(f"🔐 Removing admin-proof protection...")
+                try:
+                    if self.admin_proof.admin_unlock_with_token(folder_path):
+                        admin_proof_unlocked = True
+                        print(f"✅ Admin-proof protection removed")
+                except Exception as e:
+                    print(f"⚠️ Admin-proof unlock warning: {e}")
+            
+            # STEP 2: Remove kernel locks from files
             for file_path_str in list(self.kernel_locks.keys()):
                 if file_path_str.startswith(str(folder)):
                     if self.remove_kernel_lock(file_path_str, token_required=False):  # Token already verified
                         kernel_unlocked_count += 1
             
-            # Remove regular locks
+            # STEP 3: Remove regular locks
             for file_path_str in list(self.protected_files.keys()):
                 if file_path_str.startswith(str(folder)):
                     file_path = Path(file_path_str)

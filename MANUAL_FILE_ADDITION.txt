@@ -1,0 +1,26 @@
+# Manual Process for Adding Files to Protected Folders
+# ==================================================
+
+# Step 1: Verify USB Token
+dir E:\protection_token_*.key
+# Should show your USB tokens
+
+# Step 2: Temporarily Unlock Folder
+attrib -H -S -R "C:\Users\ajibi\OneDrive\Desktop\testnow"
+
+# Step 3: Copy Files
+copy "source_file.txt" "C:\Users\ajibi\OneDrive\Desktop\testnow\"
+
+# Step 4: Re-protect Folder
+attrib +H +S +R "C:\Users\ajibi\OneDrive\Desktop\testnow"
+
+# Step 5: Protect New Files
+attrib +H +S +R "C:\Users\ajibi\OneDrive\Desktop\testnow\source_file.txt"
+
+# ===================================================
+# IMPORTANT SECURITY NOTES:
+# - Always re-protect after adding files
+# - USB token must be present throughout process
+# - Files added without protection remain vulnerable
+# - Use automated tools when possible for safety
+# ===================================================
