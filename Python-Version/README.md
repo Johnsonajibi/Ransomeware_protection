@@ -33,7 +33,7 @@ python antiransomware_python.py --help
 - **Settings management** - Configurable protection policies
 - **Threat alerts** - Immediate notification of detected threats
 
-### 📊 Monitoring Capabilities
+### Monitoring Capabilities
 - **File system events** - Create, modify, delete, rename operations
 - **Process creation/termination** - Suspicious executable monitoring
 - **Registry modifications** - Critical system key protection
@@ -96,7 +96,7 @@ The graphical interface provides comprehensive control and monitoring:
    ```
 
 2. **Start Protection**
-   - Click "🚀 START PROTECTION" button
+   - Click "START PROTECTION" button
    - Monitor real-time statistics
    - Review activity log for threats
 
@@ -106,7 +106,7 @@ The graphical interface provides comprehensive control and monitoring:
    - Review scan results in activity log
 
 4. **Quarantine Management**
-   - Click "🔒 QUARANTINE" to manage isolated files
+   - Click "QUARANTINE" to manage isolated files
    - Restore false positives or delete threats
    - Export quarantine reports
 
@@ -192,7 +192,7 @@ restore, cipher, rsa, aes, tor
 - Network connections to Tor or Bitcoin ports
 - Registry modifications to startup entries
 
-## 📊 GUI Interface Guide
+## GUI Interface Guide
 
 ### Main Window Components
 
@@ -236,7 +236,7 @@ When threats are detected, the system shows:
 - **🔴 High (4)**: Likely threat, file quarantined
 - **⚫ Critical (5)**: Confirmed threat, immediate action
 
-## 🔒 Security Features
+## Security Features
 
 ### Memory Protection
 - **DEP (Data Execution Prevention)** - Prevents code execution in data areas

@@ -6,7 +6,7 @@ This is the **production-ready, security-hardened** version of the anti-ransomwa
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Windows 10/11 (64-bit)

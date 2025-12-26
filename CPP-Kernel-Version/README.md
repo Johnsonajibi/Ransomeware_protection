@@ -2,7 +2,7 @@
 
 Professional kernel-level anti-ransomware protection with Windows minifilter driver and advanced user interface.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```batch
 REM Run as Administrator
@@ -16,7 +16,7 @@ AntiRansomware.exe
 
 ## ✨ Features
 
-### 🔒 Kernel-Level Protection
+### Kernel-Level Protection
 - **File system minifilter** - Real-time file operation interception at Ring-0
 - **Process monitoring** - Kernel-level process creation/termination tracking
 - **Registry hooks** - Low-level registry modification protection
@@ -182,7 +182,7 @@ Click **"🛡️ START PROTECTION"** to:
 - **Quarantine** - Manage isolated threats and files
 - **Settings** - Configure protection policies
 
-#### 📊 Statistics Panel
+#### Statistics Panel
 - **Files Scanned** - Real-time file operation count
 - **Threats Blocked** - Prevented malicious operations
 - **Processes Monitored** - Active process tracking count
@@ -528,7 +528,7 @@ if (buffer != NULL) {
 verifier /standard /driver AntiRansomwareKernel.sys
 ```
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 ### Kernel Performance
 - **Callback latency**: < 1ms per file operation
@@ -561,7 +561,7 @@ CPP-Kernel-Version/
     └── Architecture.md              # System architecture
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Development Deployment
 ```batch

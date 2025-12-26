@@ -37,10 +37,10 @@ Immune Folders provides **true ransomware immunity** through encrypted container
 
 | Attack Vector | Traditional AV | Admin-Proof ACLs | Immune Folders |
 |---------------|----------------|-------------------|----------------|
-| File Encryption | ⚠️ Detection | ❌ Bypassable | ✅ **Impossible** |
-| Process Injection | ⚠️ Heuristics | ❌ Token Bypass | ✅ **Impossible** |
-| Admin Privileges | ❌ No Protection | ❌ Brittle ACLs | ✅ **Cryptographic** |
-| Zero-Day Ransomware | ❌ Unknown Signatures | ❌ Logic Flaws | ✅ **Math-Based** |
+| File Encryption | Detection | Bypassable | **Impossible** |
+| Process Injection | Heuristics | Token Bypass | **Impossible** |
+| Admin Privileges | No Protection | Brittle ACLs | **Cryptographic** |
+| Zero-Day Ransomware | Unknown Signatures | Logic Flaws | **Math-Based** |
 
 ## Quick Start
 

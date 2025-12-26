@@ -1,4 +1,4 @@
-# 🛡️ Real Anti-Ransomware Platform
+# Real Anti-Ransomware Platform
 ## Complete Enterprise Documentation with Comprehensive Architecture Diagrams
 
 **Enterprise-grade anti-ransomware protection system** featuring dual-stack kernel and user-mode defenses, database-aware service token enforcement, real-time behavioral analysis, and production-ready operational tooling.
@@ -12,7 +12,7 @@
 
 ---
 
-## 📚 Comprehensive Table of Contents
+## Comprehensive Table of Contents
 
 ### Part 1: Strategic Overview
 1. [Executive Summary](#1-executive-summary)
@@ -573,7 +573,7 @@ The system follows a strict layered architecture with clear separation of concer
 │ │││   IF suspicious → BLOCK + increment EncryptionAttempts            │││   │
 │ │││ }                                                                  │││   │
 │ │││ ELSE {                                                             │││   │
-│ │││   📊 Check: Protection level (disabled/monitor/active/maximum)    │││   │
+│ │││   [CHECK] Check: Protection level (disabled/monitor/active/maximum)    │││   │
 │ │││   IF monitor → ALLOW + log                                        │││   │
 │ │││   IF active → Apply heuristics                                    │││   │
 │ │││   IF maximum → Strict enforcement                                 │││   │
@@ -3085,7 +3085,7 @@ and network segmentation.
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                    📊 COMPLETE SYSTEM COMPONENT DIAGRAM                       ║
+║                    COMPLETE SYSTEM COMPONENT DIAGRAM                       ║
 ║                         All Components & Interactions                         ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 

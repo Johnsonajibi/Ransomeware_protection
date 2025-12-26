@@ -1,4 +1,4 @@
-# 🛡️ Real Anti-Ransomware Platform
+# Real Anti-Ransomware Platform
 
 **Enterprise-grade anti-ransomware protection system** featuring tri-factor authentication (TPM + Device Fingerprinting + PQC USB), dual-stack kernel and user-mode defenses, database-aware service token enforcement, real-time behavioral analysis, comprehensive audit logging, and production-ready operational tooling.
 
@@ -9,14 +9,14 @@
 
 > **Production Status**: All code is real, fully implemented, and free of placeholders. Ready for enterprise deployment with comprehensive testing and security hardening.
 > 
-> **🔐 NEW: Tri-Factor Authentication** - Hardware TPM 2.0 + Device Fingerprinting + Post-Quantum Cryptography USB for maximum security
+> **NEW: Tri-Factor Authentication** - Hardware TPM 2.0 + Device Fingerprinting + Post-Quantum Cryptography USB for maximum security
 
 ---
 
-## 📚 Table of Contents
+## Table of Contents
 
 1. [Executive Summary](#executive-summary)
-2. [🔐 Tri-Factor Authentication](#-tri-factor-authentication-new)
+2. [Tri-Factor Authentication](#tri-factor-authentication-new)
    - [Security Levels](#security-levels)
    - [TPM Integration](#tpm-integration)
    - [Device Fingerprinting](#device-fingerprinting)
@@ -221,10 +221,10 @@ Cryptographic Proof:
 - Run installation: `install_with_admin.py` for persistent TPM
 
 **Benefits:**
-- 🔒 **Tamper-proof**: Tokens sealed to exact boot state
-- 🔒 **Hardware-bound**: Cannot extract to another machine
-- 🔒 **Platform attestation**: Detects BIOS/firmware changes
-- 🔒 **Cryptographic proof**: PCR values verifiable by auditors
+- **Tamper-proof**: Tokens sealed to exact boot state
+- **Hardware-bound**: Cannot extract to another machine
+- **Platform attestation**: Detects BIOS/firmware changes
+- **Cryptographic proof**: PCR values verifiable by auditors
 
 ### Device Fingerprinting
 
@@ -293,10 +293,10 @@ Properties:
 ```
 
 **Benefits:**
-- 🔒 **Device binding**: Tokens work only on issuing device
-- 🔒 **Hardware changes detected**: Replacing components invalidates tokens
-- 🔒 **No bypass**: Cannot fake hardware identifiers
-- 🔒 **Privacy-preserving**: One-way hash, not reversible
+- **Device binding**: Tokens work only on issuing device
+- **Hardware changes detected**: Replacing components invalidates tokens
+- **No bypass**: Cannot fake hardware identifiers
+- **Privacy-preserving**: One-way hash, not reversible
 
 ### Post-Quantum Cryptography USB
 
@@ -363,10 +363,10 @@ Benefits:
 - USB drive connected during token operations
 
 **Benefits:**
-- 🔒 **Physical security**: Something you have (USB drive)
-- 🔒 **Quantum-safe**: Resistant to quantum computer attacks
-- 🔒 **Future-proof**: NIST-standardized algorithm
-- 🔒 **Portable**: USB key works across machines
+- **Physical security**: Something you have (USB drive)
+- **Quantum-safe**: Resistant to quantum computer attacks
+- **Future-proof**: NIST-standardized algorithm
+- **Portable**: USB key works across machines
 
 ### Audit Logging
 
@@ -454,15 +454,15 @@ When TPM unavailable (standard mode), logs show:
 ```
 
 **Benefits:**
-- 🔒 **Accountability**: Every operation traced to process and user
-- 🔒 **Compliance**: Complete audit trail for regulatory requirements
-- 🔒 **Forensics**: Investigation of security incidents
-- 🔒 **Proof**: Irrefutable evidence of TPM usage (PCR values)
-- 🔒 **Transparency**: Honest logging (no fake claims)
+- **Accountability**: Every operation traced to process and user
+- **Compliance**: Complete audit trail for regulatory requirements
+- **Forensics**: Investigation of security incidents
+- **Proof**: Irrefutable evidence of TPM usage (PCR values)
+- **Transparency**: Honest logging (no fake claims)
 
 **See [AUDIT_LOGGING_GUIDE.md](AUDIT_LOGGING_GUIDE.md) for complete documentation.**
-| **Zero-Day Protection** | Signature-based | ✅ Behavioral analysis + heuristics |
-| **Path Confinement** | Not available | ✅ Database writes restricted to data directories |
+| **Zero-Day Protection** | Signature-based | Behavioral analysis + heuristics |
+| **Path Confinement** | Not available | Database writes restricted to data directories |
 
 ---
 
@@ -580,10 +580,10 @@ The platform implements a **defense-in-depth strategy** across multiple protecti
 │  │  └────────────────────────────────────────────────────────────────────┘ │ │
 │  │  ┌────────────────────────────────────────────────────────────────────┐ │ │
 │  │  │            Access Decision Engine & Statistics                     │ │ │
-│  │  │  ✅ Allow: valid token + path match + hash match                  │ │ │
+│  │  │  [ALLOW] Allow: valid token + path match + hash match                  │ │ │
 │  │  │  ❌ Deny: expired token / hash mismatch / path violation           │ │ │
 │  │  │  🚫 Block: suspicious patterns (rapid writes, DELETE_ON_CLOSE)    │ │ │
-│  │  │  📊 Counters: FilesBlocked, EncryptionAttempts, TokenValidations  │ │ │
+│  │  │  [STATS] Counters: FilesBlocked, EncryptionAttempts, TokenValidations  │ │ │
 │  │  └────────────────────────────────────────────────────────────────────┘ │ │
 │  │  ┌────────────────────────────────────────────────────────────────────┐ │ │
 │  │  │                    IOCTL Command Handlers                          │ │ │
@@ -887,10 +887,10 @@ VERIFICATION (verify_trifactor_token):
 │  │ 2. FindServiceToken(2468) → TOKEN_ENTRY*                            │   │
 │  │                                                                      │   │
 │  │ 3. Validate token:                                                  │   │
-│  │    ✅ Check expiry: ExpiryTime > CurrentTime                        │   │
-│  │    ✅ Check binary hash: CalculateProcessHash(2468) == StoredHash   │   │
-│  │    ✅ Check path: C:\SQLData\mydb.mdf starts with C:\SQLData        │   │
-│  │    ✅ Check IsActive: TRUE                                          │   │
+│  │    [OK] Check expiry: ExpiryTime > CurrentTime                        │   │
+│  │    [OK] Check binary hash: CalculateProcessHash(2468) == StoredHash   │   │
+│  │    [OK] Check path: C:\SQLData\mydb.mdf starts with C:\SQLData        │   │
+│  │    [OK] Check IsActive: TRUE                                          │   │
 │  │                                                                      │   │
 │  │ 4. All checks passed:                                               │   │
 │  │    - InterlockedIncrement(&Token->AccessCount)                      │   │

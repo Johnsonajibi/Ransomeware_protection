@@ -3,7 +3,7 @@
 
 ---
 
-## 🎯 What Makes This Different
+## What Makes This Different
 
 **Industry Problem**: CrowdStrike, SentinelOne, and other EDR solutions fail when ransomware uses **stolen credentials** or targets **database servers** (which require whitelisting for performance).
 
@@ -15,9 +15,9 @@
 
 ---
 
-## 📁 Complete File Inventory
+## Complete File Inventory
 
-### Core Components ✅ COMPLETE
+### Core Components [COMPLETE]
 1. **RealAntiRansomwareDriver.c** (1,100+ lines)
    - Windows kernel minifilter driver
    - Service token caching & validation
@@ -45,7 +45,7 @@
 
 ---
 
-## 🛠️ Build Requirements
+## Build Requirements
 
 ### Required Software
 1. **Windows Driver Kit (WDK) 10**
@@ -67,7 +67,7 @@
 
 ---
 
-## 🔨 Build Instructions
+## Build Instructions
 
 ### Step 1: Build Kernel Driver
 
@@ -124,7 +124,7 @@ signtool sign /v /s PrivateCertStore /n "TestDriverCert" /t http://timestamp.dig
 
 ---
 
-## 🚀 Deployment & Usage
+## Deployment & Usage
 
 ### Install Driver
 ```powershell
@@ -286,7 +286,7 @@ RealAntiRansomwareManager.exe status
 
 ---
 
-## 📊 Statistics Explained
+## Statistics Explained
 
 ```
 Protection Status: 🟢 Active
