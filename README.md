@@ -972,6 +972,463 @@ VERIFICATION (verify_trifactor_token):
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+### Threat Detection Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         INPUT LAYER - Monitoring Sources                    │
+├──────────────┬──────────────┬──────────────┬──────────────┬────────────────┤
+│ File Monitor │ Process Mon  │ Registry Mon │ Network Mon  │ USB Monitor    │
+│ - Create     │ - Spawns     │ - Key writes │ - DNS queries│ - Device plug  │
+│ - Write      │ - Injections │ - Persistence│ - C2 beacons │ - File xfer    │
+│ - Delete     │ - Elevation  │ - Startup    │ - Data exfil │ - Auth tokens  │
+│ - Rename     │ - Token theft│ - Services   │ - Port scans │ - HID emulation│
+└──────┬───────┴──────┬───────┴──────┬───────┴──────┬───────┴────────┬───────┘
+       │              │              │              │                │
+       └──────────────┴──────────────┴──────────────┴────────────────┘
+                                      │
+                      ┌───────────────▼───────────────┐
+                      │   CORRELATION ENGINE          │
+                      │  - Event aggregation          │
+                      │  - Time-series analysis       │
+                      │  - Cross-source correlation   │
+                      │  - Pattern matching           │
+                      └───────────────┬───────────────┘
+                                      │
+       ┌──────────────┬───────────────┼───────────────┬────────────────┐
+       │              │               │               │                │
+┌──────▼──────┐ ┌─────▼─────┐ ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+│ Signature   │ │ Heuristic │ │ Behavioral  │ │ ML Anomaly  │ │ IoC Lookup  │
+│ Detection   │ │ Analysis  │ │ Analysis    │ │ Detection   │ │ (YARA/STIX) │
+│             │ │           │ │             │ │             │ │             │
+│ • Known bad │ │ • Entropy │ │ • Rapid I/O │ │ • Deviation │ │ • Hash repo │
+│ • Hash DB   │ │ • Packing │ │ • Shadow del│ │ • Clustering│ │ • Domain rep│
+│ • String    │ │ • Obfuscat│ │ • Cred theft│ │ • Outliers  │ │ • IP blocks │
+│   patterns  │ │ • API seq │ │ • Lateral mv│ │ • Time-based│ │ • File names│
+└──────┬──────┘ └─────┬─────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+       │              │               │               │                │
+       └──────────────┴───────────────┴───────────────┴────────────────┘
+                                      │
+                      ┌───────────────▼───────────────┐
+                      │    THREAT SCORING ENGINE      │
+                      │  • Risk calculation (0-100)   │
+                      │  • Confidence weighting       │
+                      │  • False positive filtering   │
+                      │  • Context enrichment         │
+                      └───────────────┬───────────────┘
+                                      │
+                   ┌──────────────────┼──────────────────┐
+                   │                  │                  │
+            ┌──────▼──────┐   ┌───────▼────────┐ ┌──────▼──────┐
+            │ Score < 40  │   │ Score 40-70    │ │ Score > 70  │
+            │  MONITOR    │   │    ALERT       │ │   BLOCK     │
+            └──────┬──────┘   └───────┬────────┘ └──────┬──────┘
+                   │                  │                  │
+       ┌───────────┴──────────────────┴──────────────────┴───────────┐
+       │                    RESPONSE LAYER                            │
+       ├──────────────┬──────────────┬──────────────┬────────────────┤
+       │ Log & Audit  │ Quarantine   │ Block I/O    │ Alert & Report │
+       │ - Event log  │ - Move file  │ - Deny write │ - Email/SMS    │
+       │ - SIEM feed  │ - Process    │ - Kill proc  │ - Dashboard    │
+       │ - Forensics  │   suspend    │ - Net cutoff │ - Ticket       │
+       └──────────────┴──────────────┴──────────────┴────────────────┘
+```
+
+### Token Lifecycle State Machine
+
+```
+                            ┌────────────────────────┐
+                            │   TOKEN_NOT_ISSUED     │
+                            │  (Service not started) │
+                            └───────────┬────────────┘
+                                        │
+                        configure-db + issue-token command
+                                        │
+                            ┌───────────▼────────────┐
+                            │    TOKEN_PENDING       │
+                            │  (Request submitted)   │
+                            └───────────┬────────────┘
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │ Success           │                   │ Failure
+                    │ (PCR valid +      │                   │ (Admin denied,
+                    │  TPM available)   │                   │  invalid hash)
+                    │                   │                   │
+        ┌───────────▼────────────┐      │      ┌───────────▼────────────┐
+        │   TOKEN_ACTIVE         │      │      │   TOKEN_REJECTED       │
+        │ (Kernel cache loaded)  │      │      │ (Not cached, blocked)  │
+        └───────────┬────────────┘      │      └────────────────────────┘
+                    │                   │
+        ┌───────────┼───────────┐       │
+        │           │           │       │
+        │ I/O ops   │ Periodic  │       │ Manual revoke
+        │ succeed   │ renewal   │       │ or expiry
+        │           │           │       │
+┌───────▼───┐   ┌───▼────┐  ┌──▼───────▼────────┐
+│TOKEN_VALID│   │ TOKEN_ │  │ TOKEN_EXPIRED     │
+│(I/O allow)│   │RENEWD  │  │ (TTL exceeded)    │
+└───────┬───┘   └───┬────┘  └──────────┬────────┘
+        │           │                   │
+        └───────────┘                   │
+                │                       │ Auto-cleanup
+                │                       │ (background)
+                └───────────┬───────────┘
+                            │
+                ┌───────────▼────────────┐
+                │   TOKEN_REVOKED        │
+                │ (Removed from cache)   │
+                └────────────────────────┘
+
+State Transitions:
+• NOT_ISSUED → PENDING: configure-db + issue-token
+• PENDING → ACTIVE: Successful validation (PCR + TPM + hash)
+• PENDING → REJECTED: Invalid credentials or missing admin
+• ACTIVE → VALID: I/O operations pass validation
+• ACTIVE → RENEWED: Periodic refresh before expiry
+• ACTIVE → EXPIRED: TTL window exceeded (default 24h)
+• EXPIRED → REVOKED: Auto-cleanup or manual revoke
+• ACTIVE → REVOKED: Manual revoke-token command
+
+Token Properties per State:
+• ACTIVE/VALID/RENEWED: Full I/O access, PCR-bound, audit logged
+• PENDING: No I/O access, awaiting kernel cache update
+• EXPIRED: I/O denied, grace period for renewal (5 min)
+• REJECTED/REVOKED: Immediate I/O denial, kernel cache cleared
+```
+
+### Kernel-User Communication Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         USER MODE (Ring 3)                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐   │
+│  │ CLI Manager      │     │ Python GUI       │     │ Service Daemon   │   │
+│  │ (.exe)           │     │ (tkinter/Flask)  │     │ (background)     │   │
+│  └────────┬─────────┘     └────────┬─────────┘     └────────┬─────────┘   │
+│           │                        │                        │             │
+│           └────────────────────────┼────────────────────────┘             │
+│                                    │                                       │
+│                    ┌───────────────▼───────────────┐                       │
+│                    │   Control Interface Layer     │                       │
+│                    │  • DeviceIoControl() wrapper  │                       │
+│                    │  • IOCTL marshaling           │                       │
+│                    │  • Response parsing           │                       │
+│                    └───────────────┬───────────────┘                       │
+│                                    │                                       │
+└────────────────────────────────────┼───────────────────────────────────────┘
+                                     │
+                     IOCTL Commands (CreateFile → DeviceIoControl)
+                                     │
+        ┌────────────────────────────┼────────────────────────────┐
+        │ 0x804 - Issue Token        │ 0x805 - Revoke Token       │
+        │ 0x806 - Query Stats        │ 0x807 - Set Policy         │
+        └────────────────────────────┼────────────────────────────┘
+                                     │
+┌────────────────────────────────────┼───────────────────────────────────────┐
+│                                    │          KERNEL MODE (Ring 0)         │
+├────────────────────────────────────▼───────────────────────────────────────┤
+│                                                                             │
+│                    ┌────────────────────────────────┐                       │
+│                    │  Driver Dispatch Handler       │                       │
+│                    │  • DriverEntry() registration  │                       │
+│                    │  • IRP_MJ_DEVICE_CONTROL       │                       │
+│                    │  • Input buffer validation     │                       │
+│                    └───────────────┬────────────────┘                       │
+│                                    │                                        │
+│               ┌────────────────────┼────────────────────┐                   │
+│               │                    │                    │                   │
+│   ┌───────────▼──────────┐  ┌──────▼──────┐  ┌────────▼────────┐          │
+│   │ Token Cache Manager  │  │ Policy Engine│  │ Stats Collector │          │
+│   │ • Add/Remove tokens  │  │ • Path rules │  │ • Counters      │          │
+│   │ • PID→Token lookup   │  │ • Hash check │  │ • Event logs    │          │
+│   │ • Expiry validation  │  │ • Time window│  │ • Anomaly flags │          │
+│   └───────────┬──────────┘  └──────┬───────┘  └────────┬────────┘          │
+│               │                    │                    │                   │
+│               └────────────────────┼────────────────────┘                   │
+│                                    │                                        │
+│                    ┌───────────────▼────────────────┐                       │
+│                    │   Minifilter Framework         │                       │
+│                    │  • FltRegisterFilter()         │                       │
+│                    │  • Pre/Post operation callbacks│                       │
+│                    │  • Context management          │                       │
+│                    └───────────────┬────────────────┘                       │
+│                                    │                                        │
+│        ┌───────────────────────────┼───────────────────────────┐            │
+│        │                           │                           │            │
+│  ┌─────▼─────┐          ┌──────────▼─────────┐     ┌──────────▼─────┐     │
+│  │IRP_MJ_    │          │IRP_MJ_WRITE        │     │IRP_MJ_SET_     │     │
+│  │CREATE     │          │• Entropy check     │     │INFORMATION     │     │
+│  │• Token    │          │• Rate limiting     │     │• Rename/delete │     │
+│  │  lookup   │          │• Size validation   │     │• Suspicious ops│     │
+│  │• Path     │          │• Binary hash verify│     │• Shadow copy   │     │
+│  │  match    │          └────────────────────┘     └────────────────┘     │
+│  └───────────┘                                                             │
+│                                                                             │
+│                    ┌────────────────────────────────┐                       │
+│                    │   File System Stack (NTFS)     │                       │
+│                    │  • Actual I/O operations       │                       │
+│                    │  • Disk writes                 │                       │
+│                    └────────────────────────────────┘                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Communication Mechanisms:
+┌────────────────────┬──────────────────────────────────────────────────────┐
+│ Mechanism          │ Usage                                                │
+├────────────────────┼──────────────────────────────────────────────────────┤
+│ IOCTL (sync)       │ CLI commands: issue/revoke token, query stats        │
+│ Shared Memory      │ Large data transfers (policy files, token lists)     │
+│ Event Callbacks    │ Minifilter pre/post operation hooks (I/O intercept)  │
+│ Completion Ports   │ Async I/O notifications from kernel to user          │
+│ ETW Events         │ Structured logging (Windows Event Tracing)           │
+│ Fast I/O           │ Bypasses IRP for performance-critical paths          │
+└────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+### Deployment Topologies
+
+#### Single-Host Setup (SMB/Small Enterprise)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Windows Server/Desktop                    │
+│                                                                  │
+│  ┌────────────────────┐         ┌────────────────────┐          │
+│  │ Application Layer  │         │ Database Services  │          │
+│  │ - Web Server       │◀────────┤ - SQL Server       │          │
+│  │ - File Server      │  Token  │ - PostgreSQL       │          │
+│  │ - App Services     │         │ - Oracle           │          │
+│  └──────────┬─────────┘         └─────────┬──────────┘          │
+│             │                             │                     │
+│             │      ┌──────────────────────┘                     │
+│             │      │                                            │
+│  ┌──────────▼──────▼────────────────────────────────┐           │
+│  │     Anti-Ransomware Protection Layer             │           │
+│  │  ┌────────────────┐    ┌──────────────────────┐  │           │
+│  │  │ User Mode      │    │ Kernel Minifilter    │  │           │
+│  │  │ - Manager CLI  │◀───┤ - IRP interception   │  │           │
+│  │  │ - Python GUI   │    │ - Token validation   │  │           │
+│  │  │ - Token broker │    │ - Path enforcement   │  │           │
+│  │  └────────────────┘    └──────────────────────┘  │           │
+│  └───────────────────────────────────────────────────┘           │
+│                             │                                    │
+│  ┌──────────────────────────▼─────────────────────────┐          │
+│  │ Protected Assets                                   │          │
+│  │ - C:\SQLData\, D:\Backups\, E:\FileShares\         │          │
+│  │ - immune-folders/, protected/                      │          │
+│  └────────────────────────────────────────────────────┘          │
+└─────────────────────────────────────────────────────────────────┘
+
+Characteristics:
+• Single point of administration
+• Local token issuance and validation
+• Direct kernel-user communication
+• Suitable for: Workstations, small servers, dev/test environments
+```
+
+#### Enterprise Multi-Tier (Centralized Management)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Management Tier (DMZ)                               │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │ Central Management Console                                         │     │
+│  │ • Web Dashboard (admin_dashboard.py)                               │     │
+│  │ • Policy Distribution Service                                      │     │
+│  │ • Token Broker (gRPC/REST APIs)                                    │     │
+│  │ • Audit Log Aggregator (SIEM integration)                          │     │
+│  │ • Health Monitor (alerting, metrics)                               │     │
+│  └─────────────────────────────┬──────────────────────────────────────┘     │
+└─────────────────────────────────┼──────────────────────────────────────────┘
+                                  │ gRPC (50051) / REST (8080)
+                                  │ TLS 1.3 + mutual auth
+                ┌─────────────────┼─────────────────┐
+                │                 │                 │
+┌───────────────▼────┐  ┌─────────▼────────┐  ┌────▼───────────────┐
+│  Database Tier     │  │  Application Tier │  │  File Server Tier  │
+│  ┌──────────────┐  │  │  ┌──────────────┐ │  │  ┌──────────────┐  │
+│  │ SQL Server   │  │  │  │ Web Apps     │ │  │  │ SMB/NFS      │  │
+│  │ PostgreSQL   │  │  │  │ API Services │ │  │  │ DFS-R        │  │
+│  │ Oracle       │  │  │  │ Microservices│ │  │  │ File Shares  │  │
+│  └──────┬───────┘  │  │  └──────┬───────┘ │  │  └──────┬───────┘  │
+│         │          │  │         │         │  │         │          │
+│  ┌──────▼────────┐ │  │  ┌──────▼───────┐ │  │  ┌──────▼────────┐ │
+│  │ Anti-Ransom   │ │  │  │ Anti-Ransom  │ │  │  │ Anti-Ransom   │ │
+│  │ Agent         │ │  │  │ Agent        │ │  │  │ Agent         │ │
+│  │ • Kernel drv  │ │  │  │ • Kernel drv │ │  │  │ • Kernel drv  │ │
+│  │ • Local mgr   │ │  │  │ • Local mgr  │ │  │  │ • Local mgr   │ │
+│  │ • gRPC client │ │  │  │ • gRPC client│ │  │  │ • gRPC client │ │
+│  └───────────────┘ │  │  └──────────────┘ │  │  └───────────────┘ │
+└────────────────────┘  └──────────────────┘  └────────────────────┘
+
+Data Flows:
+• Policy push: Management → Agents (YAML/JSON configs)
+• Token requests: Agent → Management → Token Broker → Agent
+• Audit logs: Agent → Management (aggregated, forwarded to SIEM)
+• Health checks: Agent → Management (heartbeat, stats)
+• Alerts: Agent → Management → Email/SMS/Ticket system
+
+Characteristics:
+• Centralized policy management
+• Remote token issuance with TPM-backed credentials
+• Cross-tier audit log aggregation
+• Suitable for: 10+ servers, compliance requirements, multi-site
+```
+
+#### High-Availability Setup (Enterprise Critical Systems)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Load Balancer / API Gateway                            │
+│                        (HAProxy, F5, Azure LB)                              │
+└──────────────────────┬────────────────────┬─────────────────────────────────┘
+                       │                    │
+       ┌───────────────┼────────────────────┼───────────────┐
+       │               │                    │               │
+┌──────▼──────┐ ┌──────▼──────┐     ┌──────▼──────┐ ┌──────▼──────┐
+│ Management  │ │ Management  │     │ Token Broker│ │ Token Broker│
+│ Console #1  │ │ Console #2  │     │ Cluster #1  │ │ Cluster #2  │
+│ (Active)    │ │ (Standby)   │     │ (Active)    │ │ (Standby)   │
+└──────┬──────┘ └──────┬──────┘     └──────┬──────┘ └──────┬──────┘
+       │               │                    │               │
+       └───────────────┼────────────────────┼───────────────┘
+                       │                    │
+                       │    ┌───────────────┘
+                       │    │
+                ┌──────▼────▼──────┐
+                │  Shared Storage  │
+                │  - Config DB     │
+                │  - Token Cache   │
+                │  - Audit Logs    │
+                │  (SQL AlwaysOn,  │
+                │   Redis cluster) │
+                └──────┬───────────┘
+                       │
+         ┌─────────────┼─────────────┐
+         │             │             │
+┌────────▼────────┐ ┌──▼──────────┐ ┌▼────────────────┐
+│ Protected Tier 1│ │ Protected   │ │ Protected Tier N│
+│ (DB Cluster)    │ │ Tier 2      │ │ (File Cluster)  │
+│ ┌──────────────┐│ │ (App Nodes) │ │ ┌──────────────┐│
+│ │ SQL #1       ││ │ ┌─────────┐ │ │ │ FileServer #1││
+│ │ SQL #2 (rep) ││ │ │ App #1  │ │ │ │ FileServer #2││
+│ └──────────────┘│ │ │ App #2  │ │ │ └──────────────┘│
+│ ┌──────────────┐│ │ │ App #3  │ │ │ ┌──────────────┐│
+│ │Anti-Ransom   ││ │ └─────────┘ │ │ │Anti-Ransom   ││
+│ │Agents (HA)   ││ │ ┌─────────┐ │ │ │Agents (HA)   ││
+│ └──────────────┘│ │ │Anti-Rans│ │ │ └──────────────┘│
+└─────────────────┘ │ │om Agents│ │ └─────────────────┘
+                    │ └─────────┘ │
+                    └─────────────┘
+
+Redundancy Features:
+• Active-standby management consoles with automatic failover
+• Token broker cluster (Redis Sentinel, SQL AlwaysOn)
+• Shared storage for config/cache (replicated across sites)
+• Agent-side caching for resilience during management outages
+• Health checks & auto-recovery (Keepalived, Pacemaker)
+• Geographic distribution (DR site with async replication)
+
+Failure Scenarios:
+• Management console down: Standby promoted within 30s
+• Token broker unavailable: Agents use cached tokens (grace period)
+• Network partition: Agents continue with last-known-good policy
+• Database failover: Automatic replica promotion, < 5s downtime
+```
+
+### Data Flow Architecture with Security Zones
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          UNTRUSTED ZONE                                     │
+│  ┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐          │
+│  │ Internet  │    │ External  │    │ Public    │    │ User      │          │
+│  │ Traffic   │────│ Firewall  │────│ Web Apps  │────│ Requests  │          │
+│  └───────────┘    └───────────┘    └─────┬─────┘    └───────────┘          │
+└─────────────────────────────────────────┼──────────────────────────────────┘
+                                          │ HTTP/HTTPS (TLS 1.3)
+                                          │ WAF filtering
+┌─────────────────────────────────────────┼──────────────────────────────────┐
+│                          DMZ / PERIMETER ZONE                               │
+│                     ┌────────────────────▼─────────────────────┐            │
+│                     │ Application Gateway / Reverse Proxy      │            │
+│                     │ • Request sanitization                   │            │
+│                     │ • Rate limiting                          │            │
+│                     │ • DDoS protection                        │            │
+│                     └────────────────────┬─────────────────────┘            │
+│                                          │                                  │
+│                     ┌────────────────────▼─────────────────────┐            │
+│                     │ Anti-Ransomware Management Console       │            │
+│                     │ • Token issuance gateway                 │            │
+│                     │ • Policy distribution                    │            │
+│                     │ • Audit log collector                    │            │
+│                     └────────────────────┬─────────────────────┘            │
+└─────────────────────────────────────────┼──────────────────────────────────┘
+                                          │ gRPC/REST (mutual TLS)
+                                          │ Certificate pinning
+┌─────────────────────────────────────────┼──────────────────────────────────┐
+│                        INTERNAL APPLICATION ZONE                            │
+│  ┌────────────────────┐    ┌────────────▼───────────┐    ┌──────────────┐  │
+│  │ Web Services       │    │ Business Logic Tier    │    │ API Gateway  │  │
+│  │ • IIS/Apache       │◀───┤ • .NET/Java apps       │◀───┤ • Auth proxy │  │
+│  │ • App servers      │    │ • Microservices        │    │ • Token val  │  │
+│  └──────────┬─────────┘    └────────────┬───────────┘    └──────────────┘  │
+│             │                           │                                   │
+│  ┌──────────▼───────────────────────────▼───────────────┐                  │
+│  │       Anti-Ransomware Protection Layer (User Mode)   │                  │
+│  │  • Process monitoring & token verification           │                  │
+│  │  • Behavioral analysis (I/O patterns)                │                  │
+│  │  • Network anomaly detection                         │                  │
+│  └──────────┬───────────────────────────────────────────┘                  │
+│             │ IOCTL / Filter Manager                                        │
+│  ┌──────────▼───────────────────────────────────────────┐                  │
+│  │   Anti-Ransomware Kernel Driver (Ring 0)             │                  │
+│  │  • IRP interception (CREATE/WRITE/SET_INFO)          │                  │
+│  │  • Token cache validation                            │                  │
+│  │  • Path confinement enforcement                      │                  │
+│  └──────────┬───────────────────────────────────────────┘                  │
+└─────────────┼────────────────────────────────────────────────────────────┘
+              │ File system I/O
+┌─────────────┼────────────────────────────────────────────────────────────┐
+│             │          DATA / DATABASE ZONE (Restricted)                   │
+│  ┌──────────▼──────────┐    ┌─────────────────┐    ┌──────────────────┐  │
+│  │ SQL Server Cluster  │    │ PostgreSQL      │    │ Oracle Databases │  │
+│  │ • Production DBs    │    │ • Analytics DBs │    │ • Legacy systems │  │
+│  │ • Encrypted at rest │    │ • TDE enabled   │    │ • Audit trails   │  │
+│  └──────────┬──────────┘    └────────┬────────┘    └────────┬─────────┘  │
+│             │                        │                       │            │
+│  ┌──────────▼────────────────────────▼───────────────────────▼─────────┐  │
+│  │            Physical Storage (Protected Assets)                      │  │
+│  │  • C:\SQLData\, D:\Backups\, E:\Archives\                           │  │
+│  │  • immune-folders/ (read-only), protected/ (whitelisted)            │  │
+│  │  • BitLocker encryption, NTFS ACLs                                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Security Boundaries & Controls:
+┌──────────────────┬──────────────────────────────────────────────────────────┐
+│ Boundary         │ Controls                                                 │
+├──────────────────┼──────────────────────────────────────────────────────────┤
+│ Untrusted → DMZ  │ Firewall, IPS/IDS, WAF, DDoS protection                  │
+│ DMZ → Internal   │ Mutual TLS, certificate pinning, gRPC auth               │
+│ Internal → Data  │ Token validation, path confinement, kernel driver        │
+│ Data → Storage   │ ACLs, encryption (TDE, BitLocker), audit logging         │
+└──────────────────┴──────────────────────────────────────────────────────────┘
+
+Data Classification:
+• Red (Critical): Database files, backups, crypto keys
+• Orange (Sensitive): Config files, logs, audit trails
+• Yellow (Internal): App binaries, user data, temp files
+• Green (Public): Static web content, documentation
+
+Trust Model:
+• Zero-trust within Internal zone (all processes require tokens)
+• Least-privilege (minimal ACLs, service accounts with limited scope)
+• Defense-in-depth (multiple layers: network, host, kernel, filesystem)
+• Continuous verification (token expiry, periodic re-auth, health checks)
+```
+
 ## Component Breakdown
 
 **Kernel Minifilter (`RealAntiRansomwareDriver.c`)**
