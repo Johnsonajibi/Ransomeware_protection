@@ -10,10 +10,10 @@ When the anti-ransomware app runs, here are **5 cryptographic proofs** that TPM 
 
 ### Without TPM (No Admin):
 ```
-⚠️ TPM requires admin privileges - run as administrator
+[WARNING] TPM requires admin privileges - run as administrator
 
 ============================================================
-⚠️ TPM NOT IN USE
+[WARNING] TPM NOT IN USE
 ============================================================
   Running in software fallback mode
   To enable TPM: Run as Administrator
@@ -24,13 +24,13 @@ Security Level: MEDIUM
 
 ### With TPM (Admin Mode):
 ```
-✓ TPM 2.0 initialized with admin privileges (PERSISTENT)
+[OK] TPM 2.0 initialized with admin privileges (PERSISTENT)
 
 ============================================================
 TPM CRYPTOGRAPHIC PROOF
 ============================================================
 
-✓ TPM Hardware: ACTIVE
+[OK] TPM Hardware: ACTIVE
   Admin Mode: True
   TPM Version: 2.0, 0, 1.38
   TPM State:
@@ -42,11 +42,11 @@ TPM CRYPTOGRAPHIC PROOF
     PCR 0 (BIOS): a3f5d8c92e4b1a67...
     PCR 7 (SecureBoot): 8b2c4e9f1a3d5c...
 
-  ⚠️ These PCR values prove real TPM hardware is active!
-     They change with every boot and can't be faked in software.
+  [NOTE] These PCR values prove real TPM hardware is active!
+         They change with every boot and can't be faked in software.
 
   WMI Namespace: root\cimv2\Security\MicrosoftTpm
-  Direct Hardware Access: ✓ CONFIRMED
+  Direct Hardware Access: [CONFIRMED]
 
 ============================================================
 
@@ -54,10 +54,10 @@ Security Level: MAXIMUM
 ```
 
 **Key Indicators:**
-- ✓ Shows actual PCR values (boot measurements)
-- ✓ Displays TPM spec version
-- ✓ Confirms WMI namespace connection
-- ✓ Security level jumps from MEDIUM → MAXIMUM/HIGH
+- [OK] Shows actual PCR values (boot measurements)
+- [OK] Displays TPM spec version
+- [OK] Confirms WMI namespace connection
+- [OK] Security level jumps from MEDIUM to MAXIMUM/HIGH
 
 ---
 
@@ -110,17 +110,17 @@ Token size: 3500+ bytes
   - Device fingerprint encryption: 80 bytes
   - TPM sealed blob: ~100+ bytes
   
-🔐 Token Protection:
-   ✓ Sealed with TPM PCR values
-   ✓ Bound to current boot session
-   ✓ Will fail if platform state changes
+[SECURE] Token Protection:
+   [OK] Sealed with TPM PCR values
+   [OK] Bound to current boot session
+   [OK] Will fail if platform state changes
 ```
 
 **Verification:**
 ```python
 # Check token metadata
 if token_size > 3400:
-    print("✓ Token contains TPM sealed data")
+    print("[OK] Token contains TPM sealed data")
 ```
 
 ---
@@ -168,14 +168,14 @@ assert unsealed_key == test_key  # Only works with real TPM!
 
 **With TPM (Real Hardware):**
 ```
-✓ Token key sealed to PCRs [0, 1, 2, 7]
-✓ Token key unsealed successfully
+[OK] Token key sealed to PCRs [0, 1, 2, 7]
+[OK] Token key unsealed successfully
 ```
 
 **Without TPM (Software Fallback):**
 ```
-⚠️ TPM not available, using software seal
-⚠️ TPM not available, using software unseal
+[WARNING] TPM not available, using software seal
+[WARNING] TPM not available, using software unseal
 ```
 
 **Why this is proof:**
@@ -200,12 +200,12 @@ python verify_tpm_proof.py
 ║                TPM PROOF VERIFICATION                     ║
 ╚══════════════════════════════════════════════════════════╝
 
-Administrator Mode: ✓ YES
+Administrator Mode: [YES]
 
 ────────────────────────────────────────────────────────────
 PROOF 1: TPM Hardware Detection
 ────────────────────────────────────────────────────────────
-✓ TPM Hardware DETECTED
+[OK] TPM Hardware DETECTED
   Activated: True
   Enabled: True
   Owned: True
@@ -217,16 +217,16 @@ PROOF 2: Platform Configuration Registers (PCRs)
 PCRs contain cryptographic measurements of boot process.
 These values CANNOT be faked - they're in TPM hardware.
 
-✓ TPM Present confirmed via PowerShell
+[OK] TPM Present confirmed via PowerShell
 
 ────────────────────────────────────────────────────────────
 PROOF 3: TPM Seal/Unseal Test
 ────────────────────────────────────────────────────────────
 Testing if data can be sealed to TPM hardware...
 
-✓ TPM Manager initialized successfully
+[OK] TPM Manager initialized successfully
 
-✅ CRYPTOGRAPHIC PROOF CONFIRMED
+[VERIFIED] CRYPTOGRAPHIC PROOF CONFIRMED
    TPM hardware is actively being used
 
 Proof Details:
@@ -236,14 +236,14 @@ Proof Details:
   pcr_0: a3f5d8c92e4b1a67...
   pcr_7: 8b2c4e9f1a3d5c...
 
-🔐 Proof Hash: 7f8a9b0c1d2e3f4a...
-   Timestamp: 2025-12-26 10:30:00
+Proof Hash: 7f8a9b0c1d2e3f4a...
+Timestamp: 2025-12-26 10:30:00
 
 ════════════════════════════════════════════════════════════
 VERIFICATION COMPLETE
 ════════════════════════════════════════════════════════════
 
-✅ TPM IS CONFIRMED ACTIVE
+[VERIFIED] TPM IS CONFIRMED ACTIVE
    All cryptographic proofs validated
    Hardware boot measurements retrieved
    Cannot be faked with software
@@ -255,23 +255,23 @@ VERIFICATION COMPLETE
 
 When the app runs with TPM, you will see **ALL** of these:
 
-- ✅ Console message: "TPM 2.0 initialized with admin privileges"
-- ✅ Security Level: HIGH or MAXIMUM (not MEDIUM)
-- ✅ PCR values displayed (32-byte hex strings)
-- ✅ TPM spec version: "2.0, 0, 1.38" or similar
-- ✅ WMI namespace: "root\cimv2\Security\MicrosoftTpm"
-- ✅ Token size: > 3400 bytes (includes TPM sealed data)
-- ✅ Token metadata: "Sealed with TPM PCR values"
-- ✅ Verification tool: All proofs pass
+- [OK] Console message: "TPM 2.0 initialized with admin privileges"
+- [OK] Security Level: HIGH or MAXIMUM (not MEDIUM)
+- [OK] PCR values displayed (32-byte hex strings)
+- [OK] TPM spec version: "2.0, 0, 1.38" or similar
+- [OK] WMI namespace: "root\cimv2\Security\MicrosoftTpm"
+- [OK] Token size: > 3400 bytes (includes TPM sealed data)
+- [OK] Token metadata: "Sealed with TPM PCR values"
+- [OK] Verification tool: All proofs pass
 
 When the app runs WITHOUT TPM:
 
-- ❌ Console message: "TPM NOT IN USE"
-- ❌ Security Level: MEDIUM (not MAXIMUM)
-- ❌ No PCR values shown
-- ❌ Software fallback messages
-- ❌ Token size: ~3389 bytes (no TPM data)
-- ❌ Verification tool: Proofs fail
+- [FAIL] Console message: "TPM NOT IN USE"
+- [FAIL] Security Level: MEDIUM (not MAXIMUM)
+- [FAIL] No PCR values shown
+- [FAIL] Software fallback messages
+- [FAIL] Token size: ~3389 bytes (no TPM data)
+- [FAIL] Verification tool: Proofs fail
 
 ---
 
@@ -282,14 +282,14 @@ When the app runs WITHOUT TPM:
 python trifactor_auth_manager.py
 ```
 
-Expected: "⚠️ TPM NOT IN USE" + Security Level MEDIUM
+Expected: "[WARNING] TPM NOT IN USE" + Security Level MEDIUM
 
 ### Step 2: Run with admin
 ```cmd
-Right-click: run_with_admin.bat → "Run as administrator"
+Right-click: run_with_admin.bat -> "Run as administrator"
 ```
 
-Expected: "✓ TPM ACTIVE" + PCR values + Security Level MAXIMUM
+Expected: "[OK] TPM ACTIVE" + PCR values + Security Level MAXIMUM
 
 ### Step 3: Run verification tool
 ```cmd
