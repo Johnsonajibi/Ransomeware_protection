@@ -77,6 +77,13 @@ except ImportError:
     HAS_PQC_USB = False
     print("⚠️ pqcdualusb not available")
 
+try:
+    import wmi
+    HAS_WMI = True
+except ImportError:
+    HAS_WMI = False
+    print("⚠️ wmi not available (VID/PID detection disabled)")
+
 
 def is_admin() -> bool:
     """Check if running with administrator privileges"""
@@ -944,6 +951,8 @@ class PQCUSBAuthenticator:
         self.pqc_crypto = None
         self.usb_devices = {}
         self.keypair = None  # Store generated keypair
+        self.usb_connection_history = {}  # Track USB connection history
+        self.wmi_connection = None  # WMI connection for VID/PID detection
         
         if HAS_PQC_USB:
             try:
@@ -956,13 +965,89 @@ class PQCUSBAuthenticator:
                 # So we swap them: (supposed_pub, supposed_priv) -> (priv, pub)
                 supposed_pub, supposed_priv = self.pqc_crypto.generate_sig_keypair()
                 self.keypair = (supposed_priv, supposed_pub)  # Swap to correct order
+                
+                # Initialize WMI for VID/PID detection
+                if HAS_WMI:
+                    try:
+                        self.wmi_connection = wmi.WMI()
+                        print("✓ WMI initialized for VID/PID detection")
+                    except Exception as e:
+                        print(f"⚠️ WMI init failed: {e}")
+                
                 print("✓ PQC USB authenticator initialized")
             except Exception as e:
                 print(f"⚠️ PQC USB init failed: {e}")
     
+    def get_enhanced_drive_info(self, drive: str) -> Dict:
+        """Get enhanced drive info with VID/PID"""
+        drive_info = self.usb_detector.get_drive_info(drive)
+        
+        # Add VID/PID using WMI
+        if self.wmi_connection and HAS_WMI:
+            try:
+                # Convert to string if it's a Path object
+                drive_str = str(drive)
+                drive_letter = drive_str.rstrip('\\').rstrip('/').rstrip(':')
+                for disk in self.wmi_connection.Win32_DiskDrive():
+                    for partition in disk.associators("Win32_DiskDriveToDiskPartition"):
+                        for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                            if logical_disk.DeviceID.startswith(drive_letter):
+                                # Parse PNPDeviceID for VID/PID
+                                # Format: USB\VID_0781&PID_5581\...
+                                pnp_id = disk.PNPDeviceID
+                                if 'VID_' in pnp_id and 'PID_' in pnp_id:
+                                    vid_start = pnp_id.index('VID_') + 4
+                                    pid_start = pnp_id.index('PID_') + 4
+                                    vid = pnp_id[vid_start:vid_start+4]
+                                    pid = pnp_id[pid_start:pid_start+4]
+                                    drive_info['vendor_id'] = vid
+                                    drive_info['product_id'] = pid
+                                    drive_info['pnp_device_id'] = pnp_id
+                                drive_info['serial'] = disk.SerialNumber if disk.SerialNumber else 'UNKNOWN'
+                                break
+            except Exception as e:
+                print(f"⚠️ VID/PID detection failed: {e}")
+        
+        return drive_info
+    
+    def log_usb_connection(self, device_id: str, event: str = 'detected'):
+        """Log USB connection history"""
+        current_time = time.time()
+        
+        if device_id not in self.usb_connection_history:
+            self.usb_connection_history[device_id] = {
+                'first_seen': current_time,
+                'last_seen': current_time,
+                'connection_count': 1,
+                'events': []
+            }
+        else:
+            history = self.usb_connection_history[device_id]
+            last_seen = history['last_seen']
+            
+            # Check if USB was disconnected (more than 5 minutes since last seen)
+            if current_time - last_seen > 300:
+                print(f"⚠️ WARNING: USB {device_id} was disconnected for {int((current_time - last_seen) / 60)} minutes")
+            
+            history['last_seen'] = current_time
+            history['connection_count'] += 1
+        
+        # Add event to history
+        self.usb_connection_history[device_id]['events'].append({
+            'timestamp': current_time,
+            'event': event,
+            'datetime': datetime.fromtimestamp(current_time).isoformat()
+        })
+        
+        # Keep only last 100 events
+        if len(self.usb_connection_history[device_id]['events']) > 100:
+            self.usb_connection_history[device_id]['events'] = \
+                self.usb_connection_history[device_id]['events'][-100:]
+    
     def detect_pqc_usb_token(self) -> Optional[Dict]:
         """
         Detect USB drive and use it for PQC operations
+        Enhanced with VID/PID checking and connection history
         
         Returns:
             Device info dictionary or None
@@ -979,14 +1064,28 @@ class PQCUSBAuthenticator:
             
             # Use first available USB drive
             drive = drives[0]
-            drive_info = self.usb_detector.get_drive_info(drive)
+            drive_info = self.get_enhanced_drive_info(drive)
             
             if drive_info:
-                device_id = f"USB_{drive}_{drive_info.get('serial', 'UNKNOWN')}"
+                # Create enhanced device_id with VID/PID if available
+                serial = drive_info.get('serial', 'UNKNOWN')
+                vid = drive_info.get('vendor_id', '')
+                pid = drive_info.get('product_id', '')
+                
+                # Convert drive to string for device_id
+                drive_str = str(drive)
+                
+                if vid and pid:
+                    device_id = f"USB_{drive_str}_{serial}_VID{vid}_PID{pid}"
+                else:
+                    device_id = f"USB_{drive_str}_{serial}"
+                
+                # Log connection
+                self.log_usb_connection(device_id, 'detected')
                 
                 # Store device info with keypair
                 self.usb_devices[device_id] = {
-                    'drive': drive,
+                    'drive': drive_str,
                     'info': drive_info,
                     'public_key': self.keypair[0] if self.keypair else None,
                     'private_key': self.keypair[1] if self.keypair else None
@@ -994,12 +1093,15 @@ class PQCUSBAuthenticator:
                 
                 return {
                     'device_id': device_id,
-                    'drive_letter': drive,
-                    'serial': drive_info.get('serial', 'UNKNOWN'),
+                    'drive_letter': drive_str,
+                    'serial': serial,
+                    'vendor_id': vid,
+                    'product_id': pid,
                     'label': drive_info.get('label', ''),
-                    'size': drive_info.get('size', 0),
+                    'size': drive_info.get('total_space', 0),
                     'pqc_algorithms': ['dilithium3', 'sphincs+'],
-                    'dilithium_level': 3
+                    'dilithium_level': 3,
+                    'connection_history': self.usb_connection_history.get(device_id, {})
                 }
             
             return None

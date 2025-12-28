@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Drivers & Agents - Admin Dashboard{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 20px auto;">
+    <h2 style="color: #00d9ff; margin-bottom: 20px;">Kernel Drivers & Agents Status</h2>
+    
+    <div style="display: grid; gap: 20px;">
+        <!-- Windows Minifilter Driver -->
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #00d9ff; margin-bottom: 15px;">Windows Minifilter Driver</h3>
+            {% if drivers.windows.available %}
+                <div style="margin-bottom: 10px;">
+                    <strong>Status:</strong>
+                    {% if drivers.windows.loaded %}
+                        <span class="success">✅ Loaded</span>
+                    {% else %}
+                        <span class="error">❌ Not Loaded</span>
+                    {% endif %}
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong>Service:</strong>
+                    {% if drivers.windows.service == 'running' %}
+                        <span class="success">🟢 Running</span>
+                    {% elif drivers.windows.service == 'stopped' %}
+                        <span style="color: #fbbf24;">⚠️ Stopped</span>
+                    {% else %}
+                        <span style="color: #9ca3af;">Unknown</span>
+                    {% endif %}
+                </div>
+                <div style="margin-top: 15px;">
+                    <strong>Management:</strong>
+                    <p style="color: #ccc; margin: 10px 0;">Use the following commands to manage the driver:</p>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        fltmc load RealAntiRansomware
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        fltmc unload RealAntiRansomware
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px;">
+                        sc start RealAntiRansomware
+                    </code>
+                </div>
+            {% else %}
+                <p style="color: #9ca3af;">Not running on Windows platform</p>
+            {% endif %}
+        </div>
+
+        <!-- Linux Netlink Broker -->
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #00d9ff; margin-bottom: 15px;">Linux Netlink Broker</h3>
+            {% if drivers.linux.available %}
+                <div style="margin-bottom: 10px;">
+                    <strong>Status:</strong>
+                    {% if drivers.linux.running %}
+                        <span class="success">✅ Running</span>
+                    {% else %}
+                        <span class="error">❌ Not Running</span>
+                    {% endif %}
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong>Service State:</strong>
+                    <span style="color: #ccc;">{{ drivers.linux.service or 'inactive' }}</span>
+                </div>
+                <div style="margin-top: 15px;">
+                    <strong>Management:</strong>
+                    <p style="color: #ccc; margin: 10px 0;">Use systemctl to manage the broker:</p>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        sudo systemctl start linux_broker.service
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        sudo systemctl stop linux_broker.service
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px;">
+                        sudo systemctl status linux_broker.service
+                    </code>
+                </div>
+            {% else %}
+                <p style="color: #9ca3af;">Not running on Linux platform</p>
+            {% endif %}
+        </div>
+
+        <!-- macOS EndpointSecurity Agent -->
+        <div style="background: #1e1e1e; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #00d9ff; margin-bottom: 15px;">macOS EndpointSecurity Agent</h3>
+            {% if drivers.macos.available %}
+                <div style="margin-bottom: 10px;">
+                    <strong>Status:</strong>
+                    {% if drivers.macos.running %}
+                        <span class="success">✅ Running</span>
+                    {% else %}
+                        <span class="error">❌ Not Running</span>
+                    {% endif %}
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong>Service State:</strong>
+                    <span style="color: #ccc;">{{ drivers.macos.service or 'unloaded' }}</span>
+                </div>
+                <div style="margin-top: 15px;">
+                    <strong>Management:</strong>
+                    <p style="color: #ccc; margin: 10px 0;">Use launchctl to manage the agent:</p>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        sudo launchctl load /Library/LaunchDaemons/com.real.antiransomware.plist
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px; margin-bottom: 5px;">
+                        sudo launchctl unload /Library/LaunchDaemons/com.real.antiransomware.plist
+                    </code>
+                    <code style="display: block; background: #0b1021; padding: 10px; border-radius: 4px;">
+                        launchctl list | grep com.real.antiransomware
+                    </code>
+                </div>
+            {% else %}
+                <p style="color: #9ca3af;">Not running on macOS platform</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-top: 20px;">
+        <h3 style="color: #00d9ff; margin-bottom: 15px;">Installation Notes</h3>
+        <ul style="color: #ccc; line-height: 1.8;">
+            <li><strong>Windows:</strong> Build the driver with WDK, sign with test certificate, install via <code>pnputil /add-driver RealAntiRansomwareDriver.inf /install</code></li>
+            <li><strong>Linux:</strong> Install broker as systemd service: <code>sudo cp linux_broker.service /etc/systemd/system/ && sudo systemctl enable linux_broker</code></li>
+            <li><strong>macOS:</strong> Sign agent with Developer ID, grant Full Disk Access, install launchd plist: <code>sudo cp com.real.antiransomware.plist /Library/LaunchDaemons/</code></li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

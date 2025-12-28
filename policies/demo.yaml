@@ -1,0 +1,24 @@
+# Anti-Ransomware Demo Policy
+# This policy protects the demo files from ransomware
+
+protection_rules:
+  - folder: "./demo_files/"
+    protection_level: "maximum"
+    allowed_operations: ["read", "backup"]
+    blocked_operations: ["encrypt", "mass_delete", "suspicious_rename"]
+    
+  - folder: "C:/Users/*/Documents/"
+    protection_level: "high" 
+    monitor_extensions: [".doc", ".pdf", ".jpg", ".png"]
+    
+alerts:
+  - trigger: "mass_file_encryption"
+    action: "block_and_alert"
+    
+  - trigger: "suspicious_file_rename"
+    action: "quarantine_process"
+
+whitelist:
+  - "notepad.exe"
+  - "code.exe"
+  - "python.exe"

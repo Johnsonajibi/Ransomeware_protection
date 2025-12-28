@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Events</h2>
+  <div id="events">Loading…</div>
+</div>
+<script>
+fetch('/api/events?limit=50').then(r=>r.json()).then(data=>{
+  const el = document.getElementById('events');
+  if (!data.length) { el.textContent = 'No events yet.'; return; }
+  const rows = data.map(e=>`<tr><td>${e.timestamp}</td><td>${e.event_type}</td><td>${e.result}</td><td>${e.file_path||''}</td><td>${e.user_id||''}</td></tr>`).join('');
+  el.innerHTML = `<table><thead><tr><th>Time</th><th>Type</th><th>Result</th><th>File</th><th>User</th></tr></thead><tbody>${rows}</tbody></table>`;
+});
+</script>
+{% endblock %}

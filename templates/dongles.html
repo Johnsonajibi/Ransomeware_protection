@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Dongles</h2>
+  {% if dongles %}
+  <table>
+    <thead><tr><th>Device</th><th>Mount</th><th>FS</th><th>Opts</th></tr></thead>
+    <tbody>
+      {% for d in dongles %}
+      <tr><td>{{ d.device }}</td><td>{{ d.mountpoint }}</td><td>{{ d.fstype }}</td><td>{{ d.opts }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No removable devices detected.</p>
+  {% endif %}
+</div>
+{% endblock %}

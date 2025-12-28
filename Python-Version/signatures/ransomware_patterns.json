@@ -1,0 +1,88 @@
+{
+  "extensions": [
+    ".encrypted", ".locked", ".crypto", ".wannacry", ".locky", ".cerber",
+    ".cryptolocker", ".cryptowall", ".teslacrypt", ".zepto", ".osiris",
+    ".dharma", ".sage", ".good", ".better", ".darkness", ".onion", ".zzzzz",
+    ".micro", ".LeChiffre", ".keybtc@inbox_com", ".0x0", ".bleep", ".1999",
+    ".vault", ".HA3", ".toxcrypt", ".hydracrypt", ".ezz", ".ecc", ".exx",
+    ".xyz", ".zzz", ".aaa", ".abc", ".ccc", ".vvv", ".xxx", ".ttt", ".micro",
+    ".encoded", ".kraken", ".supercrypt", ".ctbl", ".ctb2", ".crinf", ".r5a",
+    ".XRNT", ".XTBL", ".crypt", ".R16M01D05", ".pzdc", ".good", ".LOL!",
+    ".OMG!", ".RDM", ".RRK", ".encryptedRSA", ".crjoker", ".EnCiPhErEd",
+    ".scarab", ".revenge", ".rapid", ".makop", ".sodinokibi", ".revil",
+    ".ryuk", ".maze", ".snake", ".eking", ".phobos", ".vega", ".stop",
+    ".djvu", ".conti", ".lockbit", ".blackmatter", ".hive", ".alphv",
+    ".blackcat", ".karakurt", ".quantum", ".royal", ".play", ".cactus"
+  ],
+  
+  "processes": [
+    "encrypt.exe", "locker.exe", "cryptolocker.exe", "wannacry.exe",
+    "wcry.exe", "wanna.exe", "locky.exe", "cerber.exe", "cryptowall.exe",
+    "teslacrypt.exe", "petya.exe", "mischa.exe", "goldeneye.exe",
+    "jigsaw.exe", "samsam.exe", "ryuk.exe", "sodinokibi.exe", "revil.exe",
+    "darkside.exe", "conti.exe", "lockbit.exe", "blackmatter.exe",
+    "hive.exe", "alphv.exe", "blackcat.exe", "maze.exe", "egregor.exe"
+  ],
+  
+  "registry_keys": [
+    "HKLM\\\\Software\\\\Ransom",
+    "HKCU\\\\Software\\\\CryptoLocker",
+    "HKCU\\\\Software\\\\Locky",
+    "HKLM\\\\System\\\\CurrentControlSet\\\\Services\\\\WannaCry",
+    "HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run.*ransom",
+    "HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run.*crypt",
+    "HKLM\\\\Software\\\\WOW6432Node.*ransom",
+    "HKCU\\\\Software\\\\Classes\\\\.encrypted"
+  ],
+  
+  "bitcoin_addresses": [
+    "13AM4VW2dhxYgXeQepoHkHSQuy6NgaEb94",
+    "12t9YDPgwueZ9NyMgw519p7AA8isjr6SMw",
+    "115p7UMMngoj1pMvkpHijcRdfJNXj6LrLn"
+  ],
+  
+  "tor_nodes": [
+    ".onion"
+  ],
+  
+  "suspicious_urls": [
+    "tor2web.org",
+    "tor2web.fi",
+    "onion.to",
+    "onion.cab",
+    "onion.city"
+  ],
+  
+  "file_signatures": {
+    "wannacry": {
+      "magic_bytes": "4D5A",
+      "strings": ["WNcry@2ol7", "msg/m_bulgarian.wnry"],
+      "description": "WannaCry ransomware"
+    },
+    "locky": {
+      "strings": ["_Locky_recover_instructions.txt"],
+      "description": "Locky ransomware"
+    },
+    "cerber": {
+      "strings": ["# Cerber RansomWare", "DECRYPT MY FILES.txt"],
+      "description": "Cerber ransomware"
+    }
+  },
+  
+  "network_indicators": {
+    "tor_ports": [9001, 9030, 9050, 9051],
+    "bitcoin_ports": [8332, 8333],
+    "suspicious_ips": []
+  },
+  
+  "ransom_note_patterns": [
+    "your files have been encrypted",
+    "all your files are encrypted",
+    "decrypt your files",
+    "pay.*bitcoin",
+    "how to decrypt",
+    "readme.*decrypt",
+    "restore.*files",
+    "recover.*files"
+  ]
+}

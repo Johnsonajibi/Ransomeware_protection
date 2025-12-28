@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Protected Paths - Admin Dashboard{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 20px auto;">
+    <h2 style="color: #00d9ff; margin-bottom: 20px;">Protected Paths</h2>
+    
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="color: #00d9ff; margin-bottom: 15px;">Add New Path</h3>
+        <form id="addPathForm" style="display: grid; gap: 15px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <div>
+                <label style="display: block; margin-bottom: 5px; color: #ccc;">Path Pattern (glob pattern, e.g., /protected/*, C:\\Documents\\*)</label>
+                <input type="text" id="pathPattern" required 
+                    style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px;">
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; color: #ccc;">Max Files per Minute</label>
+                    <input type="number" id="quotaFiles" value="10" min="1" 
+                        style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; color: #ccc;">Max Bytes per Minute</label>
+                    <input type="number" id="quotaBytes" value="1048576" min="1024" 
+                        style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px;">
+                </div>
+            </div>
+            <div>
+                <label style="display: flex; align-items: center; color: #ccc; cursor: pointer;">
+                    <input type="checkbox" id="recursive" checked style="margin-right: 8px; width: 18px; height: 18px;">
+                    Recursive (protect subdirectories)
+                </label>
+            </div>
+            <button type="submit" 
+                style="padding: 12px 24px; background: #00d9ff; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                Add Path
+            </button>
+        </form>
+    </div>
+
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 8px;">
+        <h3 style="color: #00d9ff; margin-bottom: 15px;">Current Protected Paths</h3>
+        <div id="pathsContainer">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid #444;">
+                        <th style="padding: 12px; text-align: left; color: #00d9ff;">Pattern</th>
+                        <th style="padding: 12px; text-align: left; color: #00d9ff;">Quota Limits</th>
+                        <th style="padding: 12px; text-align: left; color: #00d9ff;">Recursive</th>
+                        <th style="padding: 12px; text-align: left; color: #00d9ff;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="pathsTable">
+                    {% for path in paths %}
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 12px; color: #fff;">{{ path.pattern }}</td>
+                        <td style="padding: 12px; color: #ccc;">{{ path.quota }}</td>
+                        <td style="padding: 12px; color: #ccc;">{{ 'Yes' if path.recursive else 'No' }}</td>
+                        <td style="padding: 12px;">
+                            <button onclick="deletePath('{{ path.pattern }}')" 
+                                style="padding: 6px 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;">
+                                Remove
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Add new path
+    document.getElementById('addPathForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const pattern = document.getElementById('pathPattern').value;
+        const quotaFiles = parseInt(document.getElementById('quotaFiles').value);
+        const quotaBytes = parseInt(document.getElementById('quotaBytes').value);
+        const recursive = document.getElementById('recursive').checked;
+
+        try {
+            const response = await fetch('/api/paths', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pattern: pattern,
+                    quota_files: quotaFiles,
+                    quota_bytes: quotaBytes,
+                    recursive: recursive
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Path added successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Failed to add path: ' + error.message);
+        }
+    });
+
+    // Delete path
+    async function deletePath(pattern) {
+        if (!confirm(`Remove protection for: ${pattern}?`)) return;
+
+        try {
+            const response = await fetch('/api/paths', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pattern: pattern })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Path removed successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Failed to remove path: ' + error.message);
+        }
+    }
+</script>
+{% endblock %}

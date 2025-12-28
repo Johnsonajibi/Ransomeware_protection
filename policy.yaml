@@ -1,0 +1,20 @@
+global_settings:
+  audit_level: full
+  default_quota:
+    bytes_per_min: 1048576
+    files_per_min: 10
+  require_dongle: true
+  token_lifetime: 300
+rules:
+- case_sensitive: false
+  path_pattern: /protected/*
+  process_rules: []
+  quota:
+    bytes_per_min: 1048576
+    entropy_bypass: false
+    files_per_min: 10
+    interactive_consent: true
+  recursive: true
+  time_windows: []
+signature: null
+version: '1.0'

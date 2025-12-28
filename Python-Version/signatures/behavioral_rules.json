@@ -1,0 +1,113 @@
+{
+  "scoring_thresholds": {
+    "low": 30,
+    "medium": 31,
+    "high": 61,
+    "critical": 91
+  },
+  
+  "behavior_scores": {
+    "rapid_file_modification": 30,
+    "extension_change": 40,
+    "delete_on_close": 25,
+    "suspicious_origin": 15,
+    "network_activity": 20,
+    "registry_persistence": 10,
+    "high_entropy": 35,
+    "ransom_note": 50,
+    "multiple_file_types": 20,
+    "shadow_copy_deletion": 50
+  },
+  
+  "file_patterns": [
+    {
+      "pattern": "readme.*\\.txt$",
+      "type": "ransom_note",
+      "score": 50,
+      "description": "Potential ransom note"
+    },
+    {
+      "pattern": "how.*decrypt",
+      "type": "ransom_note",
+      "score": 50,
+      "description": "Decrypt instructions file"
+    },
+    {
+      "pattern": "your.*files.*encrypted",
+      "type": "ransom_note",
+      "score": 50,
+      "description": "Encryption notification"
+    },
+    {
+      "pattern": "restore.*files\\.txt",
+      "type": "ransom_note",
+      "score": 50,
+      "description": "File restoration instructions"
+    },
+    {
+      "pattern": "decrypt.*instruction",
+      "type": "ransom_note",
+      "score": 50,
+      "description": "Decryption instructions"
+    }
+  ],
+  
+  "process_behaviors": {
+    "rapid_write_threshold": 50,
+    "time_window_seconds": 30,
+    "diverse_file_types_threshold": 5,
+    "max_extension_changes": 10
+  },
+  
+  "entropy_thresholds": {
+    "high_entropy": 7.5,
+    "encrypted_file": 7.8,
+    "suspicious_threshold": 7.0
+  },
+  
+  "whitelisted_processes": [
+    "System",
+    "svchost.exe",
+    "explorer.exe",
+    "SearchIndexer.exe",
+    "MsMpEng.exe",
+    "sqlservr.exe",
+    "postgres.exe",
+    "mysqld.exe",
+    "mongod.exe"
+  ],
+  
+  "whitelisted_extensions": [
+    ".tmp",
+    ".log",
+    ".bak",
+    ".swp",
+    ".cache"
+  ],
+  
+  "suspicious_command_patterns": [
+    "vssadmin.*delete.*shadows",
+    "wbadmin.*delete.*catalog",
+    "bcdedit.*recoveryenabled.*no",
+    "wmic.*shadowcopy.*delete",
+    "cipher\\.exe.*\\/w",
+    "del.*\\/s.*\\/q.*shadow",
+    "powershell.*-enc.*",
+    "reg.*add.*DisableAntiSpyware"
+  ],
+  
+  "file_access_patterns": {
+    "sequential_read_write": {
+      "description": "Reading files sequentially and writing encrypted versions",
+      "score": 30
+    },
+    "recursive_directory_traversal": {
+      "description": "Scanning multiple directories recursively",
+      "score": 20
+    },
+    "same_process_multiple_extensions": {
+      "description": "Single process modifying files with many different extensions",
+      "score": 35
+    }
+  }
+}

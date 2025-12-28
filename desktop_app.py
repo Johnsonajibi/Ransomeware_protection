@@ -1,0 +1,1625 @@
+"""
+Anti-Ransomware Desktop Application
+Modern GUI for ransomware protection management
+"""
+
+import sys
+import os
+import sqlite3
+import json
+from datetime import datetime
+from pathlib import Path
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QListWidget, QTextEdit, QTabWidget,
+    QLineEdit, QFileDialog, QMessageBox, QTableWidget, QTableWidgetItem,
+    QHeaderView, QDialog, QFormLayout, QCheckBox, QSpinBox, QSystemTrayIcon,
+    QMenu, QProgressBar, QGroupBox
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QAction
+import subprocess
+import psutil
+import threading
+
+# Import backend functionality
+try:
+    from unified_antiransomware import (
+        UnifiedProtectionManager, UnifiedDatabase
+    )
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    ProtectionEngine = UnifiedProtectionManager  # Alias for compatibility
+    ProtectionDatabase = UnifiedDatabase  # Alias for compatibility
+    print("[SUCCESS] Backend modules loaded successfully!")
+except ImportError as e:
+    print(f"[ERROR] Backend modules import failed: {e}")
+    import traceback
+    traceback.print_exc()
+    ProtectionEngine = None
+    ProtectionDatabase = None
+    Observer = None
+except Exception as e:
+    print(f"[ERROR] Unexpected error during import: {e}")
+    import traceback
+    traceback.print_exc()
+    ProtectionEngine = None
+    ProtectionDatabase = None
+    Observer = None
+
+
+class MonitorThread(QThread):
+    """Background monitoring thread"""
+    event_detected = pyqtSignal(dict)
+    stats_updated = pyqtSignal(dict)
+    
+    def __init__(self, engine):
+        super().__init__()
+        self.engine = engine
+        self.running = True
+        
+    def run(self):
+        """Monitor system activity"""
+        while self.running:
+            try:
+                # Get current stats
+                stats = {
+                    'cpu': psutil.cpu_percent(interval=1),
+                    'memory': psutil.virtual_memory().percent,
+                    'disk': psutil.disk_usage('/').percent,
+                    'protected_files': self.get_protected_count(),
+                    'threats_blocked': self.get_threat_count()
+                }
+                self.stats_updated.emit(stats)
+                
+            except Exception as e:
+                print(f"Monitor error: {e}")
+            
+            self.msleep(5000)  # Update every 5 seconds
+    
+    def get_protected_count(self):
+        """Count protected files"""
+        try:
+            if ProtectionDatabase:
+                db = ProtectionDatabase()
+                paths = db.get_protected_paths()
+                count = 0
+                for path_info in paths:
+                    path = Path(path_info['path'])
+                    if path.exists() and path.is_dir():
+                        count += sum(1 for _ in path.rglob('*') if _.is_file())
+                return count
+        except:
+            pass
+        return 0
+    
+    def get_threat_count(self):
+        """Count blocked threats"""
+        try:
+            if ProtectionDatabase:
+                db = ProtectionDatabase()
+                events = db.get_events(limit=1000)
+                return sum(1 for e in events if e.get('action') == 'blocked')
+        except:
+            pass
+        return 0
+    
+    def stop(self):
+        """Stop monitoring"""
+        self.running = False
+
+
+class AddPathDialog(QDialog):
+    """Dialog for adding protected paths"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Protected Path")
+        self.setMinimumWidth(500)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QFormLayout()
+        
+        # Path selection
+        path_layout = QHBoxLayout()
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText("Select folder to protect...")
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self.browse_path)
+        path_layout.addWidget(self.path_edit)
+        path_layout.addWidget(browse_btn)
+        layout.addRow("Path:", path_layout)
+        
+        # Options
+        self.recursive_cb = QCheckBox("Include subdirectories")
+        self.recursive_cb.setChecked(True)
+        layout.addRow("", self.recursive_cb)
+        
+        self.monitor_creates_cb = QCheckBox("Monitor file creations")
+        self.monitor_creates_cb.setChecked(True)
+        layout.addRow("", self.monitor_creates_cb)
+        
+        self.monitor_modifies_cb = QCheckBox("Monitor file modifications")
+        self.monitor_modifies_cb.setChecked(True)
+        layout.addRow("", self.monitor_modifies_cb)
+        
+        self.monitor_deletes_cb = QCheckBox("Monitor file deletions")
+        self.monitor_deletes_cb.setChecked(True)
+        layout.addRow("", self.monitor_deletes_cb)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        add_btn = QPushButton("Add Path")
+        add_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addStretch()
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addRow("", button_layout)
+        
+        self.setLayout(layout)
+    
+    def browse_path(self):
+        """Browse for directory"""
+        path = QFileDialog.getExistingDirectory(self, "Select Protected Directory")
+        if path:
+            self.path_edit.setText(path)
+    
+    def get_path_info(self):
+        """Get path configuration"""
+        return {
+            'path': self.path_edit.text(),
+            'recursive': self.recursive_cb.isChecked(),
+            'monitor_creates': self.monitor_creates_cb.isChecked(),
+            'monitor_modifies': self.monitor_modifies_cb.isChecked(),
+            'monitor_deletes': self.monitor_deletes_cb.isChecked()
+        }
+
+
+class MainWindow(QMainWindow):
+    """Main application window"""
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Anti-Ransomware Protection")
+        self.setMinimumSize(1000, 700)
+        
+        # Initialize backend
+        self.engine = None
+        self.db = None
+        self.monitor_thread = None
+        self.protection_active = False
+        self.observer = None
+        
+        if ProtectionEngine and ProtectionDatabase:
+            try:
+                print(f"DEBUG: Initializing database...")
+                self.db = ProtectionDatabase()
+                print(f"DEBUG: Database initialized: {self.db}")
+                print(f"DEBUG: Initializing engine...")
+                self.engine = ProtectionEngine()
+                print(f"DEBUG: Engine initialized: {self.engine}")
+                # Initialize default protected paths
+                self._init_default_paths()
+                print(f"DEBUG: Initialization complete!")
+            except Exception as e:
+                import traceback
+                error_msg = f"Backend initialization failed: {e}\n{traceback.format_exc()}"
+                print(error_msg)
+                QMessageBox.critical(self, "Initialization Error", error_msg)
+        else:
+            error_msg = f"Backend modules not available!\nProtectionEngine: {ProtectionEngine}\nProtectionDatabase: {ProtectionDatabase}"
+            print(error_msg)
+            QMessageBox.critical(self, "Missing Backend", error_msg)
+        
+        # Setup UI
+        self.setup_ui()
+        self.setup_system_tray()
+        self.setup_timers()
+        self.load_settings()
+        
+        # Load initial data
+        self.refresh_protected_paths()
+        self.refresh_events()
+        
+        # Don't auto-start protection - wait for user to click button
+        # Start monitoring thread for stats
+        if self.engine:
+            self.start_monitoring()
+    
+    def _init_default_paths(self):
+        """Initialize default protected paths"""
+        try:
+            default_paths = [
+                str(Path.home() / "Documents"),
+                str(Path.home() / "Pictures"),
+                str(Path.home() / "Desktop"),
+                str(Path.home() / "Downloads")
+            ]
+            for path in default_paths:
+                if Path(path).exists():
+                    try:
+                        self.db.add_protected_path(path, recursive=True)
+                    except:
+                        pass  # Path may already exist
+        except Exception as e:
+            print(f"Error initializing default paths: {e}")
+    
+    def setup_ui(self):
+        """Setup user interface"""
+        # Central widget
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        
+        # Header
+        header = self.create_header()
+        layout.addWidget(header)
+        
+        # Tab widget
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.create_dashboard_tab(), "Dashboard")
+        self.tabs.addTab(self.create_token_tab(), "🔑 USB Token")
+        self.tabs.addTab(self.create_protection_tab(), "Protected Paths")
+        self.tabs.addTab(self.create_events_tab(), "Security Events")
+        self.tabs.addTab(self.create_settings_tab(), "Settings")
+        layout.addWidget(self.tabs)
+        
+        # Status bar
+        self.statusBar().showMessage("Ready")
+        
+        # Apply dark theme
+        self.apply_theme()
+    
+    def create_header(self):
+        """Create header with status"""
+        header = QGroupBox()
+        layout = QHBoxLayout()
+        
+        # Logo/Title
+        title = QLabel("🛡️ Anti-Ransomware Protection")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+        
+        layout.addStretch()
+        
+        # Status indicator
+        self.status_label = QLabel("● PROTECTED")
+        self.status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+        layout.addWidget(self.status_label)
+        
+        # Control buttons
+        self.start_btn = QPushButton("Start Protection")
+        self.start_btn.clicked.connect(self.start_protection)
+        self.stop_btn = QPushButton("Stop Protection")
+        self.stop_btn.clicked.connect(self.stop_protection)
+        self.stop_btn.setEnabled(False)
+        layout.addWidget(self.start_btn)
+        layout.addWidget(self.stop_btn)
+        
+        header.setLayout(layout)
+        return header
+    
+    def create_token_tab(self):
+        """Create USB token management tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Token status
+        status_group = QGroupBox("🔐 Token Status")
+        status_layout = QVBoxLayout()
+        
+        self.token_status_label = QLabel("❌ No USB token detected")
+        self.token_status_label.setObjectName("token_status")
+        status_layout.addWidget(self.token_status_label)
+        
+        self.device_fingerprint_label = QLabel("Device Fingerprint: Loading...")
+        status_layout.addWidget(self.device_fingerprint_label)
+        
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+        
+        # USB drives
+        drives_group = QGroupBox("📀 Available USB Drives")
+        drives_layout = QVBoxLayout()
+        
+        self.usb_drives_list = QListWidget()
+        drives_layout.addWidget(self.usb_drives_list)
+        
+        btn_layout = QHBoxLayout()
+        self.refresh_usb_btn = QPushButton("🔄 Refresh USB Drives")
+        self.refresh_usb_btn.clicked.connect(self.refresh_usb_drives)
+        btn_layout.addWidget(self.refresh_usb_btn)
+        drives_layout.addLayout(btn_layout)
+        
+        drives_group.setLayout(drives_layout)
+        layout.addWidget(drives_group)
+        
+        # Token actions
+        actions_group = QGroupBox("🔑 Token Management")
+        actions_layout = QVBoxLayout()
+        
+        create_btn_layout = QHBoxLayout()
+        self.create_token_btn = QPushButton("✨ Create New USB Token")
+        self.create_token_btn.clicked.connect(self.create_usb_token)
+        create_btn_layout.addWidget(self.create_token_btn)
+        actions_layout.addLayout(create_btn_layout)
+        
+        validate_btn_layout = QHBoxLayout()
+        self.validate_token_btn = QPushButton("✅ Validate USB Token")
+        self.validate_token_btn.clicked.connect(self.validate_usb_token)
+        validate_btn_layout.addWidget(self.validate_token_btn)
+        actions_layout.addLayout(validate_btn_layout)
+        
+        actions_group.setLayout(actions_layout)
+        layout.addWidget(actions_group)
+        
+        # Token info
+        info_group = QGroupBox("ℹ️ Token Information")
+        info_layout = QVBoxLayout()
+        
+        self.token_info_text = QTextEdit()
+        self.token_info_text.setReadOnly(True)
+        self.token_info_text.setMaximumHeight(150)
+        self.token_info_text.setPlainText(
+            "🔐 ENTERPRISE QUANTUM-RESISTANT USB TOKEN\n\n"
+            "Security Features:\n"
+            "  • Kyber1024 KEM (NIST-approved post-quantum key exchange)\n"
+            "  • Dilithium3 signatures (quantum-resistant authentication)\n"
+            "  • AES-256-GCM hybrid encryption\n"
+            "  • Device fingerprint binding (CPU, BIOS, TPM, Network)\n"
+            "  • Hardware-bound authentication\n\n"
+            "Insert USB drive and click 'Create New USB Token' to begin."
+        )
+        info_layout.addWidget(self.token_info_text)
+        
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        widget.setLayout(layout)
+        
+        # Initial refresh
+        QTimer.singleShot(500, self.refresh_usb_drives)
+        QTimer.singleShot(600, self.update_device_fingerprint)
+        
+        return widget
+    
+    def create_dashboard_tab(self):
+        """Create dashboard overview"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Stats cards
+        stats_layout = QHBoxLayout()
+        
+        self.protected_files_card = self.create_stat_card("Protected Files", "0")
+        self.threats_blocked_card = self.create_stat_card("Threats Blocked", "0")
+        self.cpu_usage_card = self.create_stat_card("CPU Usage", "0%")
+        self.memory_usage_card = self.create_stat_card("Memory", "0%")
+        
+        stats_layout.addWidget(self.protected_files_card)
+        stats_layout.addWidget(self.threats_blocked_card)
+        stats_layout.addWidget(self.cpu_usage_card)
+        stats_layout.addWidget(self.memory_usage_card)
+        
+        layout.addLayout(stats_layout)
+        
+        # Recent events
+        recent_group = QGroupBox("Recent Security Events")
+        recent_layout = QVBoxLayout()
+        self.recent_events_list = QListWidget()
+        recent_layout.addWidget(self.recent_events_list)
+        recent_group.setLayout(recent_layout)
+        layout.addWidget(recent_group)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_stat_card(self, title, value):
+        """Create statistics card"""
+        card = QGroupBox(title)
+        layout = QVBoxLayout()
+        
+        value_label = QLabel(value)
+        value_label.setObjectName("stat_value")
+        value_font = QFont()
+        value_font.setPointSize(24)
+        value_font.setBold(True)
+        value_label.setFont(value_font)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(value_label)
+        card.setLayout(layout)
+        return card
+    
+    def create_protection_tab(self):
+        """Create protected paths management tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Folder Management Toolbar
+        folder_toolbar = QHBoxLayout()
+        add_btn = QPushButton("➕ Add Path")
+        add_btn.clicked.connect(self.add_protected_path)
+        remove_btn = QPushButton("➖ Remove Path")
+        remove_btn.clicked.connect(self.remove_protected_path)
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_protected_paths)
+        debug_btn = QPushButton("🐛 Debug")
+        debug_btn.clicked.connect(self.debug_table)
+        
+        folder_toolbar.addWidget(add_btn)
+        folder_toolbar.addWidget(remove_btn)
+        folder_toolbar.addWidget(refresh_btn)
+        folder_toolbar.addWidget(debug_btn)
+        folder_toolbar.addStretch()
+        
+        layout.addLayout(folder_toolbar)
+        
+        # Paths table
+        self.paths_table = QTableWidget()
+        self.paths_table.setColumnCount(4)
+        self.paths_table.setHorizontalHeaderLabels(["Path", "Recursive", "Status", "Added"])
+        self.paths_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.paths_table)
+        
+        # File Operations Toolbar (NEW)
+        file_toolbar = QHBoxLayout()
+        
+        file_ops_label = QLabel("🔐 Protected File Operations (Requires USB Token):")
+        file_ops_label.setStyleSheet("font-weight: bold; color: #14a085; margin-top: 10px;")
+        
+        open_file_btn = QPushButton("📂 Open Protected File")
+        open_file_btn.clicked.connect(self.open_protected_file)
+        open_file_btn.setToolTip("Open a protected file with token verification")
+        
+        edit_file_btn = QPushButton("✏️ Edit Protected File")
+        edit_file_btn.clicked.connect(self.edit_protected_file)
+        edit_file_btn.setToolTip("Edit a protected file with token verification")
+        
+        list_files_btn = QPushButton("📋 List Protected Files")
+        list_files_btn.clicked.connect(self.list_protected_files)
+        list_files_btn.setToolTip("Show all protected files in selected folder")
+        
+        copy_file_btn = QPushButton("📄 Copy Protected File")
+        copy_file_btn.clicked.connect(self.copy_protected_file)
+        copy_file_btn.setToolTip("Copy a protected file with token verification")
+        
+        file_toolbar.addWidget(file_ops_label)
+        file_toolbar.addWidget(open_file_btn)
+        file_toolbar.addWidget(edit_file_btn)
+        file_toolbar.addWidget(list_files_btn)
+        file_toolbar.addWidget(copy_file_btn)
+        file_toolbar.addStretch()
+        
+        layout.addLayout(file_toolbar)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_events_tab(self):
+        """Create security events tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Toolbar
+        toolbar = QHBoxLayout()
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_events)
+        clear_btn = QPushButton("🗑️ Clear Events")
+        clear_btn.clicked.connect(self.clear_events)
+        
+        toolbar.addWidget(refresh_btn)
+        toolbar.addWidget(clear_btn)
+        toolbar.addStretch()
+        
+        layout.addLayout(toolbar)
+        
+        # Events table
+        self.events_table = QTableWidget()
+        self.events_table.setColumnCount(5)
+        self.events_table.setHorizontalHeaderLabels(["Time", "Event", "Path", "Process", "Action"])
+        self.events_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.events_table)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_settings_tab(self):
+        """Create settings tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Protection settings
+        protection_group = QGroupBox("Protection Settings")
+        protection_layout = QFormLayout()
+        
+        self.auto_quarantine_cb = QCheckBox("Auto-quarantine suspicious files")
+        self.auto_quarantine_cb.setChecked(True)
+        protection_layout.addRow("", self.auto_quarantine_cb)
+        
+        self.block_encryption_cb = QCheckBox("Block rapid encryption patterns")
+        self.block_encryption_cb.setChecked(True)
+        protection_layout.addRow("", self.block_encryption_cb)
+        
+        protection_group.setLayout(protection_layout)
+        layout.addWidget(protection_group)
+
+        # Enterprise access controls
+        access_group = QGroupBox("Enterprise Access Control")
+        access_layout = QFormLayout()
+
+        self.require_token_cb = QCheckBox("Require token for protected file access")
+        self.require_token_cb.setChecked(True)
+        access_layout.addRow("", self.require_token_cb)
+
+        self.bind_fek_cb = QCheckBox("Bind file encryption keys to inserted token")
+        self.bind_fek_cb.setChecked(True)
+        access_layout.addRow("", self.bind_fek_cb)
+
+        self.auto_block_token_loss_cb = QCheckBox("Auto-block when token removed")
+        self.auto_block_token_loss_cb.setChecked(True)
+        access_layout.addRow("", self.auto_block_token_loss_cb)
+
+        access_group.setLayout(access_layout)
+        layout.addWidget(access_group)
+
+        # Detection policy
+        detection_group = QGroupBox("Detection Policies")
+        detection_layout = QFormLayout()
+
+        self.max_mods_spin = QSpinBox()
+        self.max_mods_spin.setRange(1, 1000)
+        self.max_mods_spin.setValue(50)
+
+        self.entropy_threshold_spin = QSpinBox()
+        self.entropy_threshold_spin.setRange(10, 100)
+        self.entropy_threshold_spin.setValue(80)
+        detection_layout.addRow("Entropy alert threshold (0-100):", self.entropy_threshold_spin)
+
+        detection_layout.addRow("Rapid modifications/min:", self.max_mods_spin)
+
+        detection_group.setLayout(detection_layout)
+        layout.addWidget(detection_group)
+
+        # SIEM / alerting
+        siem_group = QGroupBox("SIEM & Alerting")
+        siem_layout = QFormLayout()
+
+        self.siem_enable_cb = QCheckBox("Forward events to SIEM HTTP webhook")
+        siem_layout.addRow("", self.siem_enable_cb)
+
+        self.siem_url_edit = QLineEdit()
+        self.siem_url_edit.setPlaceholderText("https://siem.example.com/webhook")
+        siem_layout.addRow("Webhook URL:", self.siem_url_edit)
+
+        self.siem_token_edit = QLineEdit()
+        self.siem_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.siem_token_edit.setPlaceholderText("Optional bearer/API token")
+        siem_layout.addRow("Bearer token:", self.siem_token_edit)
+
+        self.siem_sign_cb = QCheckBox("Sign events with HMAC-SHA256 (uses bearer token as key)")
+        siem_layout.addRow("", self.siem_sign_cb)
+
+        siem_group.setLayout(siem_layout)
+        layout.addWidget(siem_group)
+        
+        # Startup settings
+        startup_group = QGroupBox("Startup Settings")
+        startup_layout = QFormLayout()
+        
+        self.start_with_windows_cb = QCheckBox("Start with Windows")
+        startup_layout.addRow("", self.start_with_windows_cb)
+        
+        self.minimize_to_tray_cb = QCheckBox("Minimize to system tray")
+        self.minimize_to_tray_cb.setChecked(True)
+        startup_layout.addRow("", self.minimize_to_tray_cb)
+        
+        startup_group.setLayout(startup_layout)
+        layout.addWidget(startup_group)
+        
+        # Save button
+        save_btn = QPushButton("💾 Save Settings")
+        save_btn.clicked.connect(self.save_settings)
+        layout.addWidget(save_btn)
+        
+        layout.addStretch()
+        widget.setLayout(layout)
+        return widget
+    
+    def apply_theme(self):
+        """Apply dark theme"""
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #1e1e1e;
+                color: #ffffff;
+            }
+            QWidget {
+                background-color: #1e1e1e;
+                color: #ffffff;
+            }
+            QGroupBox {
+                border: 2px solid #3f3f3f;
+                border-radius: 5px;
+                margin-top: 10px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+            QPushButton {
+                background-color: #0d7377;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #14a085;
+            }
+            QPushButton:pressed {
+                background-color: #0a5f63;
+            }
+            QTableWidget {
+                background-color: #2d2d2d;
+                border: 1px solid #3f3f3f;
+                gridline-color: #3f3f3f;
+                color: #ffffff;
+            }
+            QTableWidget::item {
+                padding: 5px;
+                color: #ffffff;
+                background-color: #2d2d2d;
+            }
+            QTableWidget::item:selected {
+                background-color: #0d7377;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #3f3f3f;
+                color: white;
+                padding: 5px;
+                border: none;
+                font-weight: bold;
+            }
+            QListWidget {
+                background-color: #2d2d2d;
+                border: 1px solid #3f3f3f;
+            }
+            QLineEdit, QSpinBox {
+                background-color: #2d2d2d;
+                border: 1px solid #3f3f3f;
+                padding: 5px;
+                border-radius: 3px;
+                color: #e8e8e8;
+                selection-background-color: #0d7377;
+                selection-color: #ffffff;
+            }
+            QCheckBox, QLabel {
+                color: #e8e8e8;
+            }
+            QTabWidget::pane {
+                border: 1px solid #3f3f3f;
+            }
+            QTabBar::tab {
+                background-color: #2d2d2d;
+                color: white;
+                padding: 8px 16px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: #0d7377;
+            }
+            #stat_value {
+                color: #00ff00;
+            }
+        """)
+    
+    def setup_system_tray(self):
+        """Setup system tray icon"""
+        self.tray_icon = QSystemTrayIcon(self)
+        # Create a simple icon (you can replace with actual icon file)
+        self.tray_icon.setToolTip("Anti-Ransomware Protection")
+        
+        # Tray menu
+        tray_menu = QMenu()
+        show_action = QAction("Show Window", self)
+        show_action.triggered.connect(self.show)
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(self.quit_application)
+        
+        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+    
+    def setup_timers(self):
+        """Setup update timers"""
+        # Refresh UI every 5 seconds
+        self.ui_timer = QTimer()
+        self.ui_timer.timeout.connect(self.update_ui)
+        self.ui_timer.start(5000)
+    
+    def start_monitoring(self):
+        """Start background monitoring"""
+        if self.engine and not self.monitor_thread:
+            self.monitor_thread = MonitorThread(self.engine)
+            self.monitor_thread.stats_updated.connect(self.update_stats)
+            self.monitor_thread.event_detected.connect(self.handle_event)
+            self.monitor_thread.start()
+    
+    def start_protection(self):
+        """Start protection engine"""
+        if not self.engine:
+            QMessageBox.warning(self, "Error", "Protection engine not initialized!")
+            return
+        
+        if not self.db:
+            QMessageBox.warning(self, "Error", "Database not initialized!")
+            return
+        
+        try:
+            # Get protected paths from database
+            paths = self.db.get_protected_paths()
+            if not paths:
+                reply = QMessageBox.question(
+                    self, "No Protected Paths",
+                    "No protected paths configured. Add default paths?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._init_default_paths()
+                    paths = self.db.get_protected_paths()
+            
+            if paths:
+                # Start file system monitoring with watchdog
+                if Observer:
+                    self.observer = Observer()
+                    for path_info in paths:
+                        path = path_info['path']
+                        if Path(path).exists():
+                            # Create event handler for this path
+                            handler = self.create_file_handler(path)
+                            self.observer.schedule(handler, path, recursive=path_info.get('recursive', True))
+                    
+                    self.observer.start()
+                
+                self.protection_active = True
+                self.status_label.setText("● PROTECTED")
+                self.status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+                self.start_btn.setEnabled(False)
+                self.stop_btn.setEnabled(True)
+                self.statusBar().showMessage(f"Protection started - monitoring {len(paths)} paths")
+                
+                # Log event
+                self.db.log_event("protection_started", "", "System", "Protection activated")
+                
+                # Refresh events to show the start event
+                self.refresh_events()
+            else:
+                QMessageBox.warning(self, "Error", "No valid paths to protect!")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to start protection: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def create_file_handler(self, path):
+        """Create file system event handler"""
+        from watchdog.events import FileSystemEventHandler
+        
+        class ProtectionHandler(FileSystemEventHandler):
+            def __init__(self, db, main_window):
+                self.db = db
+                self.main_window = main_window
+                self.modification_counts = {}
+                self.last_check = {}
+            
+            def on_modified(self, event):
+                if not event.is_directory:
+                    self.check_suspicious_activity(event.src_path, "modified")
+            
+            def on_created(self, event):
+                if not event.is_directory:
+                    self.check_suspicious_activity(event.src_path, "created")
+            
+            def on_deleted(self, event):
+                if not event.is_directory:
+                    self.check_suspicious_activity(event.src_path, "deleted")
+            
+            def check_suspicious_activity(self, file_path, event_type):
+                try:
+                    # Log the event
+                    self.db.log_event(event_type, file_path, "FileSystem", f"File {event_type}")
+                    
+                    # Check for rapid modifications (ransomware indicator)
+                    import time
+                    current_time = time.time()
+                    
+                    # Count modifications in last minute
+                    if event_type == "modified":
+                        if file_path not in self.modification_counts:
+                            self.modification_counts[file_path] = []
+                        
+                        # Remove old entries (older than 60 seconds)
+                        self.modification_counts[file_path] = [
+                            t for t in self.modification_counts[file_path] 
+                            if current_time - t < 60
+                        ]
+                        
+                        # Add current modification
+                        self.modification_counts[file_path].append(current_time)
+                        
+                        # Check if too many modifications
+                        if len(self.modification_counts[file_path]) > 10:
+                            # Suspicious! Log as threat
+                            self.db.log_event(
+                                "threat_detected", 
+                                file_path, 
+                                "RansomwareDetector", 
+                                f"Rapid modifications detected: {len(self.modification_counts[file_path])} in 60s"
+                            )
+                            # Emit signal to update UI
+                            if hasattr(self.main_window, 'refresh_events'):
+                                QTimer.singleShot(0, self.main_window.refresh_events)
+                            
+                except Exception as e:
+                    print(f"Error in file handler: {e}")
+        
+        return ProtectionHandler(self.db, self)
+    
+    def stop_protection(self):
+        """Stop protection engine"""
+        try:
+            if hasattr(self, 'observer'):
+                self.observer.stop()
+                self.observer.join(timeout=2)
+            
+            self.protection_active = False
+            self.status_label.setText("● STOPPED")
+            self.status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.statusBar().showMessage("Protection stopped")
+            
+            # Log event
+            if self.db:
+                self.db.log_event("protection_stopped", "", "System", "Protection deactivated")
+                self.refresh_events()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to stop protection: {e}")
+    
+    def add_protected_path(self):
+        """Add new protected path"""
+        dialog = AddPathDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            path_info = dialog.get_path_info()
+            print(f"[DEBUG] add_protected_path: Adding path: {path_info['path']}")
+            if path_info['path'] and self.db:
+                try:
+                    # Step 1: Add to database
+                    result = self.db.add_protected_path(
+                        path_info['path'],
+                        recursive=path_info['recursive']
+                    )
+                    print(f"[DEBUG] add_protected_path: Database result = {result}")
+                    
+                    # Step 2: CRITICAL - Apply file encryption protection
+                    if result and self.engine:
+                        print(f"🔒 [GUI] Triggering file encryption for: {path_info['path']}")
+                        self.engine.file_manager.apply_unbreakable_protection(path_info['path'])
+                    
+                    self.db.log_event("path_added", path_info['path'], "User", "Protected path added")
+                    self.refresh_protected_paths()
+                    self.refresh_events()
+                    QMessageBox.information(self, "Success", "Path added and encrypted successfully!")
+                except Exception as e:
+                    print(f"[ERROR] add_protected_path failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    QMessageBox.critical(self, "Error", f"Failed to add path: {e}")
+    
+    def remove_protected_path(self):
+        """Remove selected protected path"""
+        selected = self.paths_table.currentRow()
+        if selected >= 0 and self.db:
+            path = self.paths_table.item(selected, 0).text()
+            reply = QMessageBox.question(
+                self, "Confirm", f"Remove protection from:\n{path}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    self.db.remove_protected_path(path)
+                    self.db.log_event("path_removed", path, "User", "Protected path removed")
+                    self.refresh_protected_paths()
+                    self.refresh_events()
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to remove path: {e}")
+    
+    def debug_table(self):
+        """Debug table contents"""
+        msg = f"Table Debug Info:\n"
+        msg += f"Rows: {self.paths_table.rowCount()}\n"
+        msg += f"Columns: {self.paths_table.columnCount()}\n"
+        msg += f"Visible: {self.paths_table.isVisible()}\n"
+        msg += f"Enabled: {self.paths_table.isEnabled()}\n\n"
+        
+        for row in range(self.paths_table.rowCount()):
+            for col in range(self.paths_table.columnCount()):
+                item = self.paths_table.item(row, col)
+                if item:
+                    msg += f"[{row},{col}]: {item.text()}\n"
+                else:
+                    msg += f"[{row},{col}]: None\n"
+        
+        paths = self.db.get_protected_paths() if self.db else []
+        msg += f"\nDatabase has {len(paths)} paths"
+        
+        QMessageBox.information(self, "Table Debug", msg)
+        print(msg)
+    
+    def open_protected_file(self):
+        """Open a protected file with token verification"""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Protected File to Open",
+                "",
+                "All Files (*.*)"
+            )
+            
+            if not file_path:
+                return
+            
+            if not ProtectionEngine:
+                QMessageBox.warning(self, "Error", "Protection engine not available")
+                return
+            
+            # Use the safe file reading API
+            content = self.engine.safe_read_file(file_path)
+            
+            if content is not None:
+                # Display content in a dialog
+                dialog = QDialog(self)
+                dialog.setWindowTitle(f"File: {Path(file_path).name}")
+                dialog.resize(800, 600)
+                
+                layout = QVBoxLayout()
+                
+                text_edit = QTextEdit()
+                text_edit.setPlainText(content)
+                text_edit.setReadOnly(True)
+                layout.addWidget(text_edit)
+                
+                close_btn = QPushButton("Close")
+                close_btn.clicked.connect(dialog.accept)
+                layout.addWidget(close_btn)
+                
+                dialog.setLayout(layout)
+                dialog.exec()
+                
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Successfully opened protected file:\n{Path(file_path).name}"
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Access Denied",
+                    f"Cannot open protected file. Ensure:\n"
+                    f"1. Valid USB token is inserted\n"
+                    f"2. File is protected by this system\n"
+                    f"3. Token has proper permissions"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error opening protected file: {e}")
+    
+    def edit_protected_file(self):
+        """Edit a protected file with token verification"""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Protected File to Edit",
+                "",
+                "All Files (*.*)"
+            )
+            
+            if not file_path:
+                return
+            
+            if not ProtectionEngine:
+                QMessageBox.warning(self, "Error", "Protection engine not available")
+                return
+            
+            # Use the safe file edit API
+            if self.engine.safe_edit_file(file_path):
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Protected file opened for editing:\n{Path(file_path).name}\n\n"
+                    f"⚠️ Note: Protection will be restored when you close this application."
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Access Denied",
+                    f"Cannot edit protected file. Ensure:\n"
+                    f"1. Valid USB token is inserted\n"
+                    f"2. File is protected by this system\n"
+                    f"3. Token has proper permissions"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error editing protected file: {e}")
+    
+    def list_protected_files(self):
+        """List all protected files in selected folder"""
+        try:
+            # Get selected folder from table
+            current_row = self.paths_table.currentRow()
+            if current_row < 0:
+                QMessageBox.information(
+                    self,
+                    "No Selection",
+                    "Please select a protected folder from the table first"
+                )
+                return
+            
+            folder_path = self.paths_table.item(current_row, 0).text()
+            
+            if not ProtectionEngine:
+                QMessageBox.warning(self, "Error", "Protection engine not available")
+                return
+            
+            # Get list of protected files
+            protected_files = self.engine.list_protected_files(folder_path)
+            
+            if not protected_files:
+                QMessageBox.information(
+                    self,
+                    "No Protected Files",
+                    f"No protected files found in:\n{folder_path}"
+                )
+                return
+            
+            # Display list in dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Protected Files in: {Path(folder_path).name}")
+            dialog.resize(700, 500)
+            
+            layout = QVBoxLayout()
+            
+            info_label = QLabel(f"📁 Folder: {folder_path}\n🔒 Protected Files: {len(protected_files)}")
+            info_label.setStyleSheet("font-weight: bold; margin: 10px;")
+            layout.addWidget(info_label)
+            
+            list_widget = QListWidget()
+            for file_path in protected_files:
+                list_widget.addItem(f"🔐 {file_path}")
+            layout.addWidget(list_widget)
+            
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+            
+            dialog.setLayout(layout)
+            dialog.exec()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error listing protected files: {e}")
+    
+    def copy_protected_file(self):
+        """Copy a protected file with token verification"""
+        try:
+            source_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Protected File to Copy",
+                "",
+                "All Files (*.*)"
+            )
+            
+            if not source_path:
+                return
+            
+            dest_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Copy As",
+                Path(source_path).name,
+                "All Files (*.*)"
+            )
+            
+            if not dest_path:
+                return
+            
+            if not ProtectionEngine:
+                QMessageBox.warning(self, "Error", "Protection engine not available")
+                return
+            
+            # Use the safe file copy API
+            if self.engine.copy_protected_file(source_path, dest_path):
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Successfully copied protected file:\n"
+                    f"From: {Path(source_path).name}\n"
+                    f"To: {dest_path}"
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Access Denied",
+                    f"Cannot copy protected file. Ensure:\n"
+                    f"1. Valid USB token is inserted\n"
+                    f"2. File is protected by this system\n"
+                    f"3. Token has proper permissions"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error copying protected file: {e}")
+    
+    def refresh_protected_paths(self):
+        """Refresh protected paths list"""
+        if not self.db:
+            print("[DEBUG] refresh_protected_paths: No database connection!")
+            return
+        
+        if not hasattr(self, 'paths_table'):
+            print("[DEBUG] refresh_protected_paths: paths_table not initialized yet!")
+            return
+        
+        try:
+            paths = self.db.get_protected_paths()
+            print(f"[DEBUG] refresh_protected_paths: Got {len(paths)} paths from database")
+            if paths:
+                print(f"[DEBUG] First path: {paths[0]}")
+            
+            # Clear the table first
+            self.paths_table.clearContents()
+            self.paths_table.setRowCount(len(paths))
+            
+            for i, path_info in enumerate(paths):
+                path_item = QTableWidgetItem(path_info['path'])
+                recursive_item = QTableWidgetItem("Yes" if path_info.get('recursive') else "No")
+                status_item = QTableWidgetItem("Active")
+                added_item = QTableWidgetItem(path_info.get('added_at', 'N/A'))
+                
+                self.paths_table.setItem(i, 0, path_item)
+                self.paths_table.setItem(i, 1, recursive_item)
+                self.paths_table.setItem(i, 2, status_item)
+                self.paths_table.setItem(i, 3, added_item)
+                
+                print(f"[DEBUG] Added row {i}: {path_info['path']}")
+            
+            # Force table to update display
+            self.paths_table.viewport().update()
+            self.paths_table.update()
+            
+            print(f"[DEBUG] refresh_protected_paths: Table now has {self.paths_table.rowCount()} rows")
+            print(f"[DEBUG] Table column count: {self.paths_table.columnCount()}")
+            print(f"[DEBUG] Table visible: {self.paths_table.isVisible()}")
+        except Exception as e:
+            print(f"[ERROR] Error refreshing paths: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def refresh_events(self):
+        """Refresh security events"""
+        if not self.db:
+            return
+        
+        try:
+            events = self.db.get_events(limit=100)
+            self.events_table.setRowCount(len(events))
+            
+            for i, event in enumerate(events):
+                self.events_table.setItem(i, 0, QTableWidgetItem(event.get('timestamp', 'N/A')))
+                self.events_table.setItem(i, 1, QTableWidgetItem(event.get('event_type', 'N/A')))
+                self.events_table.setItem(i, 2, QTableWidgetItem(event.get('file_path', 'N/A')))
+                self.events_table.setItem(i, 3, QTableWidgetItem(event.get('process_name', 'N/A')))
+                self.events_table.setItem(i, 4, QTableWidgetItem(event.get('action', 'N/A')))
+        except Exception as e:
+            print(f"Error refreshing events: {e}")
+    
+    def clear_events(self):
+        """Clear all security events"""
+        reply = QMessageBox.question(
+            self, "Confirm", "Clear all security events?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes and self.db:
+            try:
+                # Clear events from database
+                self.db.clear_events()
+                self.refresh_events()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to clear events: {e}")
+    
+    def save_settings(self):
+        """Save application settings"""
+        settings = {
+            'auto_quarantine': self.auto_quarantine_cb.isChecked(),
+            'block_encryption': self.block_encryption_cb.isChecked(),
+            'max_modifications': self.max_mods_spin.value(),
+            'entropy_threshold': self.entropy_threshold_spin.value(),
+            'require_token_for_access': self.require_token_cb.isChecked(),
+            'bind_fek_to_token': self.bind_fek_cb.isChecked(),
+            'auto_block_on_token_removal': self.auto_block_token_loss_cb.isChecked(),
+            'siem_enabled': self.siem_enable_cb.isChecked(),
+            'siem_url': self.siem_url_edit.text().strip(),
+            'siem_token': self.siem_token_edit.text().strip(),
+            'start_with_windows': self.start_with_windows_cb.isChecked(),
+            'minimize_to_tray': self.minimize_to_tray_cb.isChecked()
+        }
+        
+        # Save to config file
+        config_path = Path.home() / '.antiransomware' / 'gui_config.json'
+        config_path.parent.mkdir(exist_ok=True)
+        
+        with open(config_path, 'w') as f:
+            json.dump(settings, f, indent=2)
+
+        self.apply_runtime_settings(settings)
+        
+        QMessageBox.information(self, "Success", "Settings saved successfully!")
+
+    def load_settings(self):
+        """Load settings from disk and apply to UI"""
+        config_path = Path.home() / '.antiransomware' / 'gui_config.json'
+        if not config_path.exists():
+            return
+
+        try:
+            with open(config_path, 'r') as f:
+                settings = json.load(f)
+        except Exception as e:
+            print(f"⚠️ Failed to read settings: {e}")
+            return
+
+        self.auto_quarantine_cb.setChecked(settings.get('auto_quarantine', True))
+        self.block_encryption_cb.setChecked(settings.get('block_encryption', True))
+        self.max_mods_spin.setValue(settings.get('max_modifications', 50))
+        self.entropy_threshold_spin.setValue(settings.get('entropy_threshold', 80))
+        self.require_token_cb.setChecked(settings.get('require_token_for_access', True))
+        self.bind_fek_cb.setChecked(settings.get('bind_fek_to_token', True))
+        self.auto_block_token_loss_cb.setChecked(settings.get('auto_block_on_token_removal', True))
+        self.siem_enable_cb.setChecked(settings.get('siem_enabled', False))
+        self.siem_url_edit.setText(settings.get('siem_url', ""))
+        self.siem_token_edit.setText(settings.get('siem_token', ""))
+        self.start_with_windows_cb.setChecked(settings.get('start_with_windows', False))
+        self.minimize_to_tray_cb.setChecked(settings.get('minimize_to_tray', True))
+
+        self.apply_runtime_settings(settings)
+
+    def apply_runtime_settings(self, settings: dict):
+        """Push selected settings into the running engine where possible."""
+        if not self.engine:
+            return
+
+        try:
+            file_manager = getattr(self.engine, 'file_manager', None)
+            if file_manager:
+                setattr(file_manager, 'require_token_for_access', settings.get('require_token_for_access', True))
+                setattr(file_manager, 'bind_fek_to_token', settings.get('bind_fek_to_token', True))
+                setattr(file_manager, 'auto_block_on_token_removal', settings.get('auto_block_on_token_removal', True))
+        except Exception as e:
+            print(f"⚠️ Failed to apply access-control settings: {e}")
+
+        if settings.get('siem_enabled'):
+            webhook = settings.get('siem_url', "")
+            token = settings.get('siem_token', "")
+            try:
+                if hasattr(self.engine, 'update_siem_config'):
+                    self.engine.update_siem_config(webhook, token)
+                else:
+                    # Fallback: set environment so next engine init picks it up
+                    if webhook:
+                        os.environ['SIEM_HTTP_URL'] = webhook
+                    if token:
+                        os.environ['SIEM_HTTP_BEARER'] = token
+            except Exception as e:
+                print(f"⚠️ Failed to reconfigure SIEM: {e}")
+        else:
+            os.environ.pop('SIEM_HTTP_URL', None)
+            os.environ.pop('SIEM_HTTP_BEARER', None)
+    
+    def update_stats(self, stats):
+        """Update statistics display"""
+        # Update stat cards
+        protected_value = self.protected_files_card.findChild(QLabel, "stat_value")
+        if protected_value:
+            protected_value.setText(str(stats.get('protected_files', 0)))
+        
+        threats_value = self.threats_blocked_card.findChild(QLabel, "stat_value")
+        if threats_value:
+            threats_value.setText(str(stats.get('threats_blocked', 0)))
+        
+        cpu_value = self.cpu_usage_card.findChild(QLabel, "stat_value")
+        if cpu_value:
+            cpu_value.setText(f"{stats.get('cpu', 0):.1f}%")
+        
+        memory_value = self.memory_usage_card.findChild(QLabel, "stat_value")
+        if memory_value:
+            memory_value.setText(f"{stats.get('memory', 0):.1f}%")
+    
+    def handle_event(self, event):
+        """Handle security event"""
+        # Add to recent events list
+        event_text = f"[{event.get('timestamp')}] {event.get('event_type')} - {event.get('file_path')}"
+        self.recent_events_list.insertItem(0, event_text)
+        
+        # Keep only last 50 events
+        while self.recent_events_list.count() > 50:
+            self.recent_events_list.takeItem(self.recent_events_list.count() - 1)
+    
+    def update_ui(self):
+        """Periodic UI update"""
+        # Refresh current tab
+        current_index = self.tabs.currentIndex()
+        if current_index == 1:  # Protected Paths
+            self.refresh_protected_paths()
+        elif current_index == 2:  # Events
+            self.refresh_events()
+    
+    def closeEvent(self, event):
+        """Handle window close"""
+        if self.minimize_to_tray_cb.isChecked():
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "Anti-Ransomware Protection",
+                "Application minimized to tray",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+        else:
+            self.quit_application()
+    
+    def quit_application(self):
+        """Quit application"""
+        # Restore protection to all files before closing
+        if self.engine:
+            try:
+                print("🔒 Restoring file protection before shutdown...")
+                self.engine.restore_all_file_access()
+            except Exception as e:
+                print(f"⚠️ Error restoring file protection: {e}")
+        
+        # Stop monitoring
+        if self.monitor_thread:
+            self.monitor_thread.stop()
+            self.monitor_thread.wait()
+        
+        # Stop engine
+        if self.engine:
+            try:
+                self.engine.stop()
+            except:
+                pass
+        
+        QApplication.quit()
+    
+    def refresh_usb_drives(self):
+        """Refresh list of USB drives"""
+        try:
+            self.usb_drives_list.clear()
+            
+            if self.engine and hasattr(self.engine, 'token_manager'):
+                if hasattr(self.engine.token_manager, 'enterprise_mode') and self.engine.token_manager.enterprise_mode:
+                    # Use enterprise USB detection
+                    drives = self.engine.token_manager.enterprise_manager.get_available_usb_drives()
+                    
+                    if drives:
+                        for drive in drives:
+                            drive_str = str(drive)
+                            self.usb_drives_list.addItem(f"📀 {drive_str}")
+                        self.statusBar().showMessage(f"Found {len(drives)} USB drive(s)")
+                    else:
+                        self.usb_drives_list.addItem("No USB drives detected")
+                        self.statusBar().showMessage("No USB drives found")
+                else:
+                    # Legacy USB detection
+                    import psutil
+                    drives = []
+                    for partition in psutil.disk_partitions():
+                        if 'removable' in partition.opts.lower():
+                            drives.append(partition.mountpoint)
+                    
+                    if drives:
+                        for drive in drives:
+                            self.usb_drives_list.addItem(f"📀 {drive}")
+                        self.statusBar().showMessage(f"Found {len(drives)} USB drive(s)")
+                    else:
+                        self.usb_drives_list.addItem("No USB drives detected")
+                        self.statusBar().showMessage("No USB drives found")
+            else:
+                self.usb_drives_list.addItem("Engine not initialized")
+                
+        except Exception as e:
+            self.usb_drives_list.addItem(f"Error: {str(e)}")
+            self.statusBar().showMessage(f"USB scan error: {str(e)}")
+    
+    def update_device_fingerprint(self):
+        """Update device fingerprint display"""
+        try:
+            if self.engine and hasattr(self.engine, 'token_manager'):
+                if hasattr(self.engine.token_manager, 'enterprise_mode') and self.engine.token_manager.enterprise_mode:
+                    # Enterprise fingerprint
+                    fp = self.engine.token_manager.enterprise_manager.device_fingerprint
+                    self.device_fingerprint_label.setText(f"🔐 Device Fingerprint: {fp[:48]}...")
+                else:
+                    # Legacy fingerprint
+                    fp = self.engine.token_manager.hardware_fingerprint
+                    self.device_fingerprint_label.setText(f"Device Fingerprint: {fp[:32]}...")
+        except Exception as e:
+            self.device_fingerprint_label.setText(f"Device Fingerprint: Error - {str(e)}")
+    
+    def create_usb_token(self):
+        """Create new USB token"""
+        try:
+            # Get selected USB drive
+            selected_items = self.usb_drives_list.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(self, "No Selection", "Please select a USB drive first!")
+                return
+            
+            # Extract drive path
+            drive_text = selected_items[0].text()
+            drive_path = drive_text.replace("📀 ", "").strip()
+            
+            if not self.engine or not hasattr(self.engine, 'token_manager'):
+                QMessageBox.critical(self, "Error", "Engine not initialized!")
+                return
+            
+            # Confirm action
+            reply = QMessageBox.question(
+                self,
+                "Create USB Token",
+                f"Create quantum-resistant USB token on {drive_path}?\n\n"
+                "This token will be bound to this device's hardware and use:\n"
+                "  • Kyber1024 (post-quantum key exchange)\n"
+                "  • Dilithium3 (post-quantum signatures)\n"
+                "  • AES-256-GCM (hybrid encryption)\n\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.statusBar().showMessage("Creating quantum-resistant token...")
+                
+                # Create token
+                token_path = self.engine.token_manager.create_token(drive_path)
+                
+                if token_path:
+                    self.token_status_label.setText(f"✅ Token created: {token_path}")
+                    self.token_info_text.append(f"\n✅ Token created successfully!\n   Path: {token_path}")
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"USB token created successfully!\n\nLocation: {token_path}\n\n"
+                        "Keep this USB drive safe - it's your master key!"
+                    )
+                    self.statusBar().showMessage("Token created successfully!")
+                else:
+                    self.token_status_label.setText("❌ Token creation failed")
+                    QMessageBox.critical(self, "Error", "Failed to create USB token. Check console for details.")
+                    self.statusBar().showMessage("Token creation failed!")
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to create token: {str(e)}")
+            self.statusBar().showMessage(f"Token creation error: {str(e)}")
+    
+    def validate_usb_token(self):
+        """Validate USB token"""
+        try:
+            # Get selected USB drive
+            selected_items = self.usb_drives_list.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(self, "No Selection", "Please select a USB drive first!")
+                return
+            
+            # Extract drive path
+            drive_text = selected_items[0].text()
+            drive_path = drive_text.replace("📀 ", "").strip()
+            
+            if not self.engine or not hasattr(self.engine, 'token_manager'):
+                QMessageBox.critical(self, "Error", "Engine not initialized!")
+                return
+            
+            self.statusBar().showMessage("Validating token...")
+            
+            # Find token files on drive
+            import glob
+            import os
+            
+            # Look for both quantum tokens and legacy tokens
+            quantum_tokens = glob.glob(os.path.join(drive_path, "quantum_token_*.qkey"))
+            legacy_tokens = glob.glob(os.path.join(drive_path, "protection_token_*.key"))
+            
+            all_tokens = quantum_tokens + legacy_tokens
+            
+            if not all_tokens:
+                QMessageBox.warning(
+                    self,
+                    "No Token Found",
+                    f"No USB tokens found on {drive_path}\n\n"
+                    "Please insert a USB drive with a valid token or create a new one."
+                )
+                self.token_status_label.setText("❌ No token found on drive")
+                self.statusBar().showMessage("No token found")
+                return
+            
+            # Validate each token
+            valid_tokens = []
+            for token_path in all_tokens:
+                is_valid = self.engine.token_manager.validate_secure_token(token_path)
+                if is_valid:
+                    valid_tokens.append(token_path)
+            
+            if valid_tokens:
+                token_info = "\n".join([f"  • {os.path.basename(t)}" for t in valid_tokens])
+                self.token_status_label.setText(f"✅ {len(valid_tokens)} valid token(s) detected")
+                self.token_info_text.append(f"\n✅ Token validation successful!\n{token_info}")
+                QMessageBox.information(
+                    self,
+                    "Token Valid",
+                    f"Found {len(valid_tokens)} valid token(s):\n\n{token_info}\n\n"
+                    "✅ You can now access protected files!"
+                )
+                self.statusBar().showMessage(f"{len(valid_tokens)} valid token(s) found!")
+            else:
+                self.token_status_label.setText("⚠️ Token(s) not valid for this device")
+                
+                reply = QMessageBox.question(
+                    self,
+                    "Invalid Token - Create New?",
+                    f"Found {len(all_tokens)} token(s) but none are valid for THIS device.\n\n"
+                    "❌ Tokens are hardware-bound and were created on a different device.\n\n"
+                    "📝 Possible reasons:\n"
+                    "  • Token was created on another computer\n"
+                    "  • Device hardware has changed (CPU, BIOS, network card)\n"
+                    "  • Token file is corrupted\n\n"
+                    "💡 Would you like to create a NEW token for this device?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Automatically trigger token creation
+                    self.create_usb_token()
+                else:
+                    self.statusBar().showMessage("Token validation failed - create a new token for this device")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to validate token: {str(e)}")
+            self.statusBar().showMessage(f"Validation error: {str(e)}")
+
+
+def main():
+    """Main entry point"""
+    app = QApplication(sys.argv)
+    app.setApplicationName("Anti-Ransomware Protection")
+    app.setOrganizationName("AntiRansomware")
+    
+    # Create and show main window
+    window = MainWindow()
+    window.show()
+    
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

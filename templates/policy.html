@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Policy</h2>
+  <pre style="white-space:pre-wrap">{{ policy | tojson(indent=2) }}</pre>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Dashboard</h2>
+  <p class="success">🟢 Online</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+    <div class="card"><strong>Events Today</strong><div>{{ stats.events_today }}</div></div>
+    <div class="card"><strong>Denied Today</strong><div>{{ stats.denied_today }}</div></div>
+    <div class="card"><strong>Active Tokens</strong><div>{{ stats.active_tokens }}</div></div>
+    <div class="card"><strong>Active Dongles</strong><div>{{ stats.active_dongles }}</div></div>
+    <div class="card"><strong>Active Hosts</strong><div>{{ stats.active_hosts }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>PQC Hardware Token Status</h3>
+  {% if token_status.connected %}
+  <p class="success">✅ PQC Token Connected</p>
+  <table style="width: auto;">
+    <tr><th>Serial</th><td>{{ token_status.serial }}</td></tr>
+    <tr><th>Public Key</th><td><code style="background: #0b1021; padding: 4px 8px; border-radius: 3px;">{{ token_status.public_key }}</code></td></tr>
+  </table>
+  {% elif token_status.error %}
+  <p class="error">⚠️ Error detecting token: {{ token_status.error }}</p>
+  {% else %}
+  <p style="color: #fbbf24;">⚠️ No PQC token detected. Insert USB token to enable token issuance.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Recent Events</h3>
+  {% if events %}
+  <table>
+    <thead><tr><th>Time</th><th>Type</th><th>Result</th><th>File</th><th>User</th></tr></thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td>{{ e.timestamp }}</td>
+        <td>{{ e.event_type }}</td>
+        <td>{{ e.result }}</td>
+        <td>{{ e.file_path }}</td>
+        <td>{{ e.user_id }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No events yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
