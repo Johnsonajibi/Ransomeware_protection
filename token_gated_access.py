@@ -25,6 +25,22 @@ except ImportError:
     print("⚠️ Tri-factor authentication not available")
     HAS_TRIFACTOR = False
 
+# Import system health checker
+try:
+    from system_health_checker import SystemHealthChecker
+    HAS_HEALTH_CHECKER = True
+except ImportError:
+    print("⚠️ System health checker not available")
+    HAS_HEALTH_CHECKER = False
+
+# Import security event logger
+try:
+    from security_event_logger import SecurityEventLogger
+    HAS_LOGGER = True
+except ImportError:
+    print("⚠️ Security event logger not available")
+    HAS_LOGGER = False
+
 
 class TokenGatedAccessControl:
     """
@@ -38,9 +54,18 @@ class TokenGatedAccessControl:
         
         self.protected_paths = {}  # path -> token_requirements
         self.auth_manager = None
+        self.health_checker = None
+        self.logger = None
         
         # Load saved protected paths
         self._load_protected_paths()
+        
+        # Initialize security components
+        if HAS_HEALTH_CHECKER:
+            self.health_checker = SystemHealthChecker()
+        
+        if HAS_LOGGER:
+            self.logger = SecurityEventLogger()
         
         if HAS_TRIFACTOR:
             try:
@@ -214,14 +239,40 @@ class TokenGatedAccessControl:
             print(f"⚠️ Path not protected: {path}")
             return False
         
+        # STEP 1: System Health Check (CRITICAL)
+        if self.health_checker and HAS_HEALTH_CHECKER:
+            print("\n🔍 Performing system health check before granting access...")
+            
+            if not self.health_checker.can_use_usb_token():
+                # Log the blocked attempt
+                if self.logger:
+                    usb_info = self.auth_manager.usb_auth.detect_pqc_usb_token() if self.auth_manager else None
+                    device_id = usb_info['device_id'] if usb_info else 'UNKNOWN'
+                    self.logger.log_usb_blocked(device_id, self.health_checker.threat_indicators)
+                
+                print("\n❌ ACCESS DENIED: System compromised - USB token blocked")
+                print("   Complete remediation steps before attempting access")
+                return False
+            
+            print("✓ System health check passed")
+        
         requirements = self.protected_paths[path_str]
         
-        # Validate token
+        # STEP 2: Validate token
         if not self._validate_token(token_data, requirements):
             print("❌ Token validation failed - access denied")
+            
+            # Log the failed attempt
+            if self.logger:
+                self.logger.log_access_denied(
+                    path_str,
+                    {'name': 'token_gated_access.py', 'pid': os.getpid(), 'user': os.getlogin() if hasattr(os, 'getlogin') else 'UNKNOWN'},
+                    token_present=token_data is not None
+                )
+            
             return False
         
-        # Remove access restrictions
+        # STEP 3: Remove access restrictions
         if requirements['is_directory']:
             success = self._unblock_folder_access(path_str)
         else:
