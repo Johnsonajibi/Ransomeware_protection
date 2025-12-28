@@ -29,6 +29,13 @@ except ImportError:
     HAS_LOGGER = False
     print("⚠️ Security event logger not available")
 
+try:
+    from email_alerting import EmailAlertingSystem
+    HAS_EMAIL = True
+except ImportError:
+    HAS_EMAIL = False
+    print("⚠️ Email alerting not available")
+
 
 class SystemHealthChecker:
     """
@@ -49,6 +56,9 @@ class SystemHealthChecker:
         
         # Load security event logger
         self.logger = SecurityEventLogger() if HAS_LOGGER else None
+        
+        # Load email alerting
+        self.email_alerter = EmailAlertingSystem() if HAS_EMAIL else None
         
         # Suspicious process patterns
         self.suspicious_patterns = [
@@ -110,6 +120,10 @@ class SystemHealthChecker:
             print(f"\n⚠️ Threat Indicators ({len(self.threat_indicators)}):")
             for indicator in self.threat_indicators:
                 print(f"  • {indicator}")
+        
+        # Send email alert if compromised
+        if self.system_compromised and self.email_alerter:
+            self._send_health_alert(result)
         
         print("="*60)
         
@@ -278,6 +292,31 @@ class SystemHealthChecker:
             print(f"⚠️ Failed to check system integrity: {e}")
         
         return False
+    
+    def _send_health_alert(self, health_result: Dict):
+        """Send email alert for compromised system"""
+        
+        try:
+            alert_details = {
+                'system_status': 'COMPROMISED',
+                'check_results': {
+                    check: 'FAILED' if failed else 'PASSED'
+                    for check, failed in health_result['checks'].items()
+                },
+                'threat_indicators': health_result['threat_indicators'],
+                'remediation_required': True,
+                'usb_access_blocked': True
+            }
+            
+            self.email_alerter.send_alert(
+                alert_type='SYSTEM_HEALTH_CHECK_FAILED',
+                severity='CRITICAL',
+                details=alert_details,
+                attach_logs=True
+            )
+            
+        except Exception as e:
+            print(f"⚠️ Failed to send health alert: {e}")
     
     def get_remediation_steps(self) -> List[str]:
         """

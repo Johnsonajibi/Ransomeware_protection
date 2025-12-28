@@ -388,6 +388,44 @@ class SecurityEventLogger:
             details={
                 'reason': reason,
                 'triggered_by': triggered_by,
+                'action': 'SYSTEM_WIDE_LOCKDOWN',
+                'all_access_denied': True,
+                'network_isolated': True,
+                'processes_terminated': True
+            },
+            user_account=triggered_by
+        )
+        
+        self.log_event(event)
+    
+    def log_emergency_lockdown_lifted(self, authorized_by: str, verification_token: Optional[str] = None):
+        """Log emergency lockdown lifted"""
+        
+        event = SecurityEvent(
+            timestamp=time.time(),
+            event_type='EMERGENCY_LOCKDOWN_LIFTED',
+            severity='HIGH',
+            details={
+                'authorized_by': authorized_by,
+                'verification_token': verification_token or 'NONE',
+                'action': 'LOCKDOWN_RELEASED',
+                'manual_restoration_required': True
+            },
+            user_account=authorized_by
+        )
+        
+        self.log_event(event)
+    
+    def log_emergency_lockdown(self, reason: str, triggered_by: str):
+        """Log emergency lockdown activation"""
+        
+        event = SecurityEvent(
+            timestamp=time.time(),
+            event_type='EMERGENCY_LOCKDOWN_ACTIVATED',
+            severity='CRITICAL',
+            details={
+                'reason': reason,
+                'triggered_by': triggered_by,
                 'action': 'ALL_ACCESS_DENIED'
             },
             user_account=triggered_by
