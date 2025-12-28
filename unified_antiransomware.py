@@ -3099,18 +3099,32 @@ class FileAccessControl:
 
             sd.SetSecurityDescriptorDacl(1, dacl, 0)
             win32security.SetFileSecurity(path_str, win32security.DACL_SECURITY_INFORMATION, sd)
+            
+            # Set file attributes - hide files only if configured
+            # Default: Don't hide files in gate mode to keep them visible to user
+            hide_protected_files = os.getenv('HIDE_PROTECTED_FILES', '').lower() in ('1', 'true', 'yes')
+            
             try:
-                win32api.SetFileAttributes(
-                    path_str,
-                    win32con.FILE_ATTRIBUTE_READONLY |
-                    win32con.FILE_ATTRIBUTE_HIDDEN |
-                    win32con.FILE_ATTRIBUTE_SYSTEM
-                )
+                if hide_protected_files:
+                    # Hide files for maximum stealth
+                    win32api.SetFileAttributes(
+                        path_str,
+                        win32con.FILE_ATTRIBUTE_READONLY |
+                        win32con.FILE_ATTRIBUTE_HIDDEN |
+                        win32con.FILE_ATTRIBUTE_SYSTEM
+                    )
+                else:
+                    # Keep files visible but read-only (default)
+                    win32api.SetFileAttributes(
+                        path_str,
+                        win32con.FILE_ATTRIBUTE_READONLY
+                    )
             except Exception:
                 pass
 
             self._log_audit(f"BLOCK {path_str} guardian={self.guardian_sid} leases={len(self._active_leases(file_path))}")
-            print(f"🔒 External access BLOCKED for: {Path(file_path).name}")
+            visibility = "hidden" if hide_protected_files else "visible"
+            print(f"🔒 External access BLOCKED for: {Path(file_path).name} ({visibility})")
             return True
 
         except Exception as e:
