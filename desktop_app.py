@@ -7,6 +7,7 @@ import sys
 import os
 import sqlite3
 import json
+import traceback
 from datetime import datetime
 from pathlib import Path
 from PyQt6.QtWidgets import (
@@ -34,14 +35,12 @@ try:
     print("[SUCCESS] Backend modules loaded successfully!")
 except ImportError as e:
     print(f"[ERROR] Backend modules import failed: {e}")
-    import traceback
     traceback.print_exc()
     ProtectionEngine = None
     ProtectionDatabase = None
     Observer = None
 except Exception as e:
     print(f"[ERROR] Unexpected error during import: {e}")
-    import traceback
     traceback.print_exc()
     ProtectionEngine = None
     ProtectionDatabase = None
@@ -248,7 +247,6 @@ class MainWindow(QMainWindow):
                 self._init_default_paths()
                 print(f"DEBUG: Initialization complete!")
             except Exception as e:
-                import traceback
                 error_msg = f"Backend initialization failed: {e}\n{traceback.format_exc()}"
                 print(error_msg)
                 QMessageBox.critical(self, "Initialization Error", error_msg)

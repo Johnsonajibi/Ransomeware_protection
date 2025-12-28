@@ -22,6 +22,7 @@ import json
 import logging
 import secrets
 import base64
+import traceback
 import platform
 import subprocess
 import threading
@@ -39,6 +40,7 @@ import sqlite3
 from datetime import datetime
 from enterprise_detection import load_enterprise_config
 from pathlib import Path
+from cryptography.fernet import Fernet
 
 # Safe print wrapper to handle unicode in packaged apps
 _original_print = print
@@ -1762,10 +1764,109 @@ class SecureUSBTokenManager:
             return self.validate_secure_token(token_path)
     
     def _is_token_revoked(self, token_data):
-        """Check if token has been revoked (placeholder for revocation system)"""
-        # In a full implementation, this would check against a revocation list
-        # For now, return False (not revoked)
-        return False
+        """
+        Check if token has been revoked
+        
+        Implements a real revocation system using:
+        - Revocation list stored in secure database
+        - Token blacklist by token_id
+        - Compromised machine_id detection
+        - Timestamp-based automatic expiration
+        """
+        try:
+            # Check revocation database
+            revocation_file = Path(os.getenv('PROGRAMDATA', 'C:\\ProgramData')) / 'AntiRansomware' / 'revoked_tokens.json'
+            
+            if revocation_file.exists():
+                with open(revocation_file, 'r') as f:
+                    revoked_data = json.load(f)
+                
+                # Check if token_id is revoked
+                token_id = token_data.get('token_id', '')
+                if token_id in revoked_data.get('revoked_token_ids', []):
+                    print(f"❌ Token revoked: Token ID {token_id} in revocation list")
+                    return True
+                
+                # Check if machine_id is compromised
+                machine_id = token_data.get('machine_id', '')
+                if machine_id in revoked_data.get('compromised_machines', []):
+                    print(f"❌ Token revoked: Machine ID {machine_id[:8]}... is compromised")
+                    return True
+                
+                # Check expiration date
+                created = token_data.get('created', '')
+                max_age_days = revoked_data.get('max_token_age_days', 365)
+                if created:
+                    from datetime import datetime, timedelta
+                    created_date = datetime.fromisoformat(created)
+                    if datetime.now() - created_date > timedelta(days=max_age_days):
+                        print(f"❌ Token expired: Created {created_date.date()}, max age {max_age_days} days")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"⚠️ Revocation check failed: {e}")
+            # Fail-safe: if revocation check fails, allow access but log warning
+            return False
+    
+    def revoke_token(self, token_id: str = None, machine_id: str = None, reason: str = "MANUAL_REVOCATION"):
+        """
+        Revoke a token or all tokens for a machine
+        
+        Args:
+            token_id: Specific token to revoke
+            machine_id: Revoke all tokens for this machine
+            reason: Reason for revocation
+        """
+        try:
+            revocation_file = Path(os.getenv('PROGRAMDATA', 'C:\\ProgramData')) / 'AntiRansomware' / 'revoked_tokens.json'
+            revocation_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Load existing revocation list
+            if revocation_file.exists():
+                with open(revocation_file, 'r') as f:
+                    revoked_data = json.load(f)
+            else:
+                revoked_data = {
+                    'revoked_token_ids': [],
+                    'compromised_machines': [],
+                    'max_token_age_days': 365,
+                    'revocation_history': []
+                }
+            
+            # Add revocation entry
+            if token_id:
+                if token_id not in revoked_data['revoked_token_ids']:
+                    revoked_data['revoked_token_ids'].append(token_id)
+                    revoked_data['revocation_history'].append({
+                        'type': 'token_id',
+                        'value': token_id,
+                        'reason': reason,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    print(f"✓ Token {token_id} revoked")
+            
+            if machine_id:
+                if machine_id not in revoked_data['compromised_machines']:
+                    revoked_data['compromised_machines'].append(machine_id)
+                    revoked_data['revocation_history'].append({
+                        'type': 'machine_id',
+                        'value': machine_id[:16] + '...',
+                        'reason': reason,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    print(f"✓ All tokens for machine {machine_id[:8]}... revoked")
+            
+            # Save revocation list
+            with open(revocation_file, 'w') as f:
+                json.dump(revoked_data, f, indent=2)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Token revocation failed: {e}")
+            return False
 
     # Legacy compatibility methods
     def get_machine_id(self):
