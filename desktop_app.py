@@ -47,6 +47,42 @@ except Exception as e:
     ProtectionDatabase = None
     Observer = None
 
+# Import new security features
+try:
+    from emergency_kill_switch import EmergencyKillSwitch
+    HAS_KILL_SWITCH = True
+except ImportError:
+    HAS_KILL_SWITCH = False
+    EmergencyKillSwitch = None
+
+try:
+    from email_alerting import EmailAlertingSystem
+    HAS_EMAIL = True
+except ImportError:
+    HAS_EMAIL = False
+    EmailAlertingSystem = None
+
+try:
+    from siem_integration import SIEMIntegration
+    HAS_SIEM = True
+except ImportError:
+    HAS_SIEM = False
+    SIEMIntegration = None
+
+try:
+    from shadow_copy_protection import ShadowCopyProtection
+    HAS_SHADOW = True
+except ImportError:
+    HAS_SHADOW = False
+    ShadowCopyProtection = None
+
+try:
+    from system_health_checker import SystemHealthChecker
+    HAS_HEALTH = True
+except ImportError:
+    HAS_HEALTH = False
+    SystemHealthChecker = None
+
 
 class MonitorThread(QThread):
     """Background monitoring thread"""
@@ -193,6 +229,13 @@ class MainWindow(QMainWindow):
         self.protection_active = False
         self.observer = None
         
+        # Initialize new security features
+        self.kill_switch = EmergencyKillSwitch() if HAS_KILL_SWITCH else None
+        self.email_alerter = EmailAlertingSystem() if HAS_EMAIL else None
+        self.siem = SIEMIntegration() if HAS_SIEM else None
+        self.shadow_protection = ShadowCopyProtection() if HAS_SHADOW else None
+        self.health_checker = SystemHealthChecker() if HAS_HEALTH else None
+        
         if ProtectionEngine and ProtectionDatabase:
             try:
                 print(f"DEBUG: Initializing database...")
@@ -264,6 +307,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.create_token_tab(), "🔑 USB Token")
         self.tabs.addTab(self.create_protection_tab(), "Protected Paths")
         self.tabs.addTab(self.create_events_tab(), "Security Events")
+        self.tabs.addTab(self.create_health_tab(), "🏥 System Health")
+        self.tabs.addTab(self.create_emergency_tab(), "🚨 Emergency")
+        self.tabs.addTab(self.create_alerts_tab(), "📧 Alerts")
+        self.tabs.addTab(self.create_shadow_tab(), "💾 Shadow Copies")
         self.tabs.addTab(self.create_settings_tab(), "Settings")
         layout.addWidget(self.tabs)
         
@@ -627,6 +674,305 @@ class MainWindow(QMainWindow):
         save_btn = QPushButton("💾 Save Settings")
         save_btn.clicked.connect(self.save_settings)
         layout.addWidget(save_btn)
+        
+        layout.addStretch()
+        widget.setLayout(layout)
+        return widget
+    
+    def create_health_tab(self):
+        """Create system health check tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Header
+        header = QLabel("🏥 System Health Monitor")
+        header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(header)
+        
+        # Health status
+        status_group = QGroupBox("Health Status")
+        status_layout = QVBoxLayout()
+        
+        self.health_status_label = QLabel("Status: Unknown")
+        self.health_status_label.setFont(QFont("Arial", 12))
+        status_layout.addWidget(self.health_status_label)
+        
+        # Check results
+        self.health_results = QTextEdit()
+        self.health_results.setReadOnly(True)
+        self.health_results.setMaximumHeight(200)
+        status_layout.addWidget(self.health_results)
+        
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+        
+        # Threat indicators
+        threats_group = QGroupBox("Threat Indicators")
+        threats_layout = QVBoxLayout()
+        
+        self.threat_list = QListWidget()
+        threats_layout.addWidget(self.threat_list)
+        
+        threats_group.setLayout(threats_layout)
+        layout.addWidget(threats_group)
+        
+        # Control buttons
+        button_layout = QHBoxLayout()
+        
+        check_btn = QPushButton("🔍 Run Health Check")
+        check_btn.clicked.connect(self.run_health_check)
+        button_layout.addWidget(check_btn)
+        
+        auto_check_btn = QPushButton("⏰ Enable Auto-Check")
+        auto_check_btn.setCheckable(True)
+        auto_check_btn.clicked.connect(self.toggle_auto_health_check)
+        button_layout.addWidget(auto_check_btn)
+        
+        layout.addLayout(button_layout)
+        layout.addStretch()
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_emergency_tab(self):
+        """Create emergency kill switch tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Warning header
+        warning = QLabel("🚨 EMERGENCY KILL SWITCH")
+        warning.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        warning.setStyleSheet("color: #ff0000;")
+        warning.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(warning)
+        
+        info = QLabel("Activates system-wide lockdown in case of active ransomware attack")
+        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(info)
+        
+        # Status
+        status_group = QGroupBox("Lockdown Status")
+        status_layout = QVBoxLayout()
+        
+        self.lockdown_status_label = QLabel("Status: Normal Operations")
+        self.lockdown_status_label.setFont(QFont("Arial", 12))
+        self.lockdown_status_label.setStyleSheet("color: #00ff00;")
+        status_layout.addWidget(self.lockdown_status_label)
+        
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+        
+        # Configuration
+        config_group = QGroupBox("Lockdown Configuration")
+        config_layout = QFormLayout()
+        
+        self.network_isolation_cb = QCheckBox("Enable network isolation")
+        config_layout.addRow("", self.network_isolation_cb)
+        
+        self.auto_terminate_cb = QCheckBox("Auto-terminate suspicious processes")
+        self.auto_terminate_cb.setChecked(True)
+        config_layout.addRow("", self.auto_terminate_cb)
+        
+        self.desktop_alert_cb = QCheckBox("Show desktop alerts")
+        self.desktop_alert_cb.setChecked(True)
+        config_layout.addRow("", self.desktop_alert_cb)
+        
+        config_group.setLayout(config_layout)
+        layout.addWidget(config_group)
+        
+        # Emergency actions
+        actions_group = QGroupBox("Emergency Actions")
+        actions_layout = QVBoxLayout()
+        
+        activate_btn = QPushButton("🚨 ACTIVATE EMERGENCY LOCKDOWN")
+        activate_btn.setStyleSheet("background-color: #ff0000; color: white; font-weight: bold; padding: 15px;")
+        activate_btn.clicked.connect(self.activate_emergency_lockdown)
+        actions_layout.addWidget(activate_btn)
+        
+        lift_btn = QPushButton("🔓 Lift Lockdown")
+        lift_btn.setStyleSheet("background-color: #00aa00; color: white; font-weight: bold; padding: 10px;")
+        lift_btn.clicked.connect(self.lift_emergency_lockdown)
+        actions_layout.addWidget(lift_btn)
+        
+        actions_group.setLayout(actions_layout)
+        layout.addWidget(actions_group)
+        
+        layout.addStretch()
+        widget.setLayout(layout)
+        return widget
+    
+    def create_alerts_tab(self):
+        """Create email/SIEM alerts configuration tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Email alerting
+        email_group = QGroupBox("📧 Email Alerting")
+        email_layout = QFormLayout()
+        
+        self.email_enabled_cb = QCheckBox("Enable email alerts")
+        email_layout.addRow("", self.email_enabled_cb)
+        
+        self.email_provider_combo = self.create_combo(["Gmail", "Office 365", "Outlook", "Custom SMTP"])
+        email_layout.addRow("Provider:", self.email_provider_combo)
+        
+        self.email_from = QLineEdit()
+        email_layout.addRow("From Email:", self.email_from)
+        
+        self.email_username = QLineEdit()
+        email_layout.addRow("SMTP Username:", self.email_username)
+        
+        self.email_password = QLineEdit()
+        self.email_password.setEchoMode(QLineEdit.EchoMode.Password)
+        email_layout.addRow("SMTP Password:", self.email_password)
+        
+        self.email_recipients = QTextEdit()
+        self.email_recipients.setMaximumHeight(60)
+        self.email_recipients.setPlaceholderText("Enter recipient emails, one per line")
+        email_layout.addRow("Recipients:", self.email_recipients)
+        
+        test_email_btn = QPushButton("📨 Send Test Email")
+        test_email_btn.clicked.connect(self.send_test_email)
+        email_layout.addRow("", test_email_btn)
+        
+        email_group.setLayout(email_layout)
+        layout.addWidget(email_group)
+        
+        # SIEM integration
+        siem_group = QGroupBox("🔍 SIEM Integration")
+        siem_layout = QFormLayout()
+        
+        self.siem_enabled_cb = QCheckBox("Enable SIEM forwarding")
+        siem_layout.addRow("", self.siem_enabled_cb)
+        
+        self.siem_platform_combo = self.create_combo(["Splunk", "ELK", "QRadar", "Azure Sentinel", "Generic Syslog"])
+        siem_layout.addRow("Platform:", self.siem_platform_combo)
+        
+        self.siem_server = QLineEdit()
+        siem_layout.addRow("SIEM Server:", self.siem_server)
+        
+        self.siem_port = QSpinBox()
+        self.siem_port.setRange(1, 65535)
+        self.siem_port.setValue(514)
+        siem_layout.addRow("Port:", self.siem_port)
+        
+        self.siem_protocol_combo = self.create_combo(["UDP", "TCP", "TLS"])
+        siem_layout.addRow("Protocol:", self.siem_protocol_combo)
+        
+        self.siem_format_combo = self.create_combo(["RFC 5424", "CEF", "JSON"])
+        siem_layout.addRow("Format:", self.siem_format_combo)
+        
+        test_siem_btn = QPushButton("🧪 Send Test Event")
+        test_siem_btn.clicked.connect(self.send_test_siem_event)
+        siem_layout.addRow("", test_siem_btn)
+        
+        siem_group.setLayout(siem_layout)
+        layout.addWidget(siem_group)
+        
+        # Rate limiting
+        rate_group = QGroupBox("⏱️ Rate Limiting")
+        rate_layout = QFormLayout()
+        
+        self.max_emails_hour = QSpinBox()
+        self.max_emails_hour.setRange(1, 100)
+        self.max_emails_hour.setValue(10)
+        rate_layout.addRow("Max emails per hour:", self.max_emails_hour)
+        
+        self.max_emails_day = QSpinBox()
+        self.max_emails_day.setRange(1, 1000)
+        self.max_emails_day.setValue(50)
+        rate_layout.addRow("Max emails per day:", self.max_emails_day)
+        
+        rate_group.setLayout(rate_layout)
+        layout.addWidget(rate_group)
+        
+        # Save button
+        save_alerts_btn = QPushButton("💾 Save Alert Settings")
+        save_alerts_btn.clicked.connect(self.save_alert_settings)
+        layout.addWidget(save_alerts_btn)
+        
+        layout.addStretch()
+        widget.setLayout(layout)
+        return widget
+    
+    def create_shadow_tab(self):
+        """Create shadow copy protection tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Header
+        header = QLabel("💾 Shadow Copy Protection")
+        header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(header)
+        
+        # Protection status
+        status_group = QGroupBox("Protection Status")
+        status_layout = QVBoxLayout()
+        
+        self.shadow_protection_label = QLabel("Monitoring: Inactive")
+        self.shadow_protection_label.setFont(QFont("Arial", 12))
+        status_layout.addWidget(self.shadow_protection_label)
+        
+        # Control buttons
+        button_layout = QHBoxLayout()
+        
+        self.start_shadow_btn = QPushButton("▶️ Start Monitoring")
+        self.start_shadow_btn.clicked.connect(self.start_shadow_protection)
+        button_layout.addWidget(self.start_shadow_btn)
+        
+        self.stop_shadow_btn = QPushButton("⏸️ Stop Monitoring")
+        self.stop_shadow_btn.clicked.connect(self.stop_shadow_protection)
+        self.stop_shadow_btn.setEnabled(False)
+        button_layout.addWidget(self.stop_shadow_btn)
+        
+        status_layout.addLayout(button_layout)
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+        
+        # Current shadow copies
+        copies_group = QGroupBox("Current Shadow Copies")
+        copies_layout = QVBoxLayout()
+        
+        self.shadow_copies_table = QTableWidget()
+        self.shadow_copies_table.setColumnCount(4)
+        self.shadow_copies_table.setHorizontalHeaderLabels(["ID", "Volume", "Created", "Path"])
+        self.shadow_copies_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        copies_layout.addWidget(self.shadow_copies_table)
+        
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh Shadow Copies")
+        refresh_btn.clicked.connect(self.refresh_shadow_copies)
+        copies_layout.addWidget(refresh_btn)
+        
+        copies_group.setLayout(copies_layout)
+        layout.addWidget(copies_group)
+        
+        # Shadow copy management
+        management_group = QGroupBox("Shadow Copy Management")
+        management_layout = QHBoxLayout()
+        
+        create_btn = QPushButton("📸 Create Shadow Copy")
+        create_btn.clicked.connect(self.create_shadow_copy)
+        management_layout.addWidget(create_btn)
+        
+        configure_btn = QPushButton("⚙️ Configure VSS Storage")
+        configure_btn.clicked.connect(self.configure_vss_storage)
+        management_layout.addWidget(configure_btn)
+        
+        management_group.setLayout(management_layout)
+        layout.addWidget(management_group)
+        
+        # Statistics
+        stats_group = QGroupBox("VSS Statistics")
+        stats_layout = QVBoxLayout()
+        
+        self.vss_stats = QTextEdit()
+        self.vss_stats.setReadOnly(True)
+        self.vss_stats.setMaximumHeight(150)
+        stats_layout.addWidget(self.vss_stats)
+        
+        stats_group.setLayout(stats_layout)
+        layout.addWidget(stats_group)
         
         layout.addStretch()
         widget.setLayout(layout)
@@ -1606,6 +1952,346 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to validate token: {str(e)}")
             self.statusBar().showMessage(f"Validation error: {str(e)}")
+    
+    def create_combo(self, items):
+        """Helper to create combo box"""
+        from PyQt6.QtWidgets import QComboBox
+        combo = QComboBox()
+        combo.addItems(items)
+        return combo
+    
+    # New feature action handlers
+    
+    def run_health_check(self):
+        """Run system health check"""
+        if not HAS_HEALTH or not self.health_checker:
+            QMessageBox.warning(self, "Not Available", "System health checker not available")
+            return
+        
+        try:
+            result = self.health_checker.check_system_health()
+            
+            # Update status
+            if result['healthy']:
+                self.health_status_label.setText("Status: ✅ HEALTHY")
+                self.health_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+            else:
+                self.health_status_label.setText("Status: ❌ COMPROMISED")
+                self.health_status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
+            
+            # Update results
+            results_text = "Check Results:\n"
+            for check, failed in result['checks'].items():
+                status = "❌ FAILED" if failed else "✓ PASSED"
+                results_text += f"  {check}: {status}\n"
+            
+            self.health_results.setText(results_text)
+            
+            # Update threat indicators
+            self.threat_list.clear()
+            for indicator in result['threat_indicators']:
+                self.threat_list.addItem(indicator)
+            
+            self.statusBar().showMessage("Health check complete")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Health check failed: {e}")
+    
+    def toggle_auto_health_check(self, checked):
+        """Toggle automatic health checking"""
+        if checked:
+            QMessageBox.information(self, "Auto-Check Enabled", "Health checks will run every 5 minutes")
+        else:
+            QMessageBox.information(self, "Auto-Check Disabled", "Automatic health checks disabled")
+    
+    def activate_emergency_lockdown(self):
+        """Activate emergency kill switch"""
+        if not HAS_KILL_SWITCH or not self.kill_switch:
+            QMessageBox.warning(self, "Not Available", "Emergency kill switch not available")
+            return
+        
+        reply = QMessageBox.critical(
+            self,
+            "⚠️ EMERGENCY LOCKDOWN",
+            "This will:\n"
+            "  • Block ALL protected file access\n"
+            "  • Terminate suspicious processes\n"
+            "  • Isolate network (if enabled)\n"
+            "  • Send security alerts\n\n"
+            "Are you SURE you want to activate emergency lockdown?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                import os
+                user = os.getlogin() if hasattr(os, 'getlogin') else 'GUI_USER'
+                self.kill_switch.activate_lockdown(reason="GUI_MANUAL_TRIGGER", triggered_by=user)
+                
+                self.lockdown_status_label.setText("Status: 🚨 LOCKDOWN ACTIVE")
+                self.lockdown_status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
+                
+                QMessageBox.information(self, "Lockdown Activated", "Emergency lockdown is now active")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to activate lockdown: {e}")
+    
+    def lift_emergency_lockdown(self):
+        """Lift emergency lockdown"""
+        if not HAS_KILL_SWITCH or not self.kill_switch:
+            QMessageBox.warning(self, "Not Available", "Emergency kill switch not available")
+            return
+        
+        if not self.kill_switch.is_locked_down():
+            QMessageBox.information(self, "Not in Lockdown", "System is not currently in lockdown")
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Lift Lockdown",
+            "Verify system is clean before lifting lockdown.\n\n"
+            "Type 'CONFIRM' in the next dialog to proceed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            from PyQt6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getText(self, "Confirmation", "Type CONFIRM:")
+            
+            if ok and text == "CONFIRM":
+                try:
+                    import os
+                    user = os.getlogin() if hasattr(os, 'getlogin') else 'GUI_USER'
+                    self.kill_switch.lift_lockdown(authorized_by=user)
+                    
+                    self.lockdown_status_label.setText("Status: Normal Operations")
+                    self.lockdown_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+                    
+                    QMessageBox.information(self, "Lockdown Lifted", "Emergency lockdown has been lifted")
+                    
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to lift lockdown: {e}")
+    
+    def send_test_email(self):
+        """Send test email alert"""
+        if not HAS_EMAIL or not self.email_alerter:
+            QMessageBox.warning(self, "Not Available", "Email alerting not available")
+            return
+        
+        try:
+            # Update config from GUI
+            self.email_alerter.config['enabled'] = self.email_enabled_cb.isChecked()
+            self.email_alerter.config['from_email'] = self.email_from.text()
+            self.email_alerter.config['username'] = self.email_username.text()
+            self.email_alerter.config['password'] = self.email_password.text()
+            self.email_alerter.config['recipients'] = [
+                r.strip() for r in self.email_recipients.toPlainText().split('\n') if r.strip()
+            ]
+            
+            success = self.email_alerter.send_alert(
+                alert_type='TEST_ALERT',
+                severity='INFO',
+                details={'message': 'Test email from Anti-Ransomware GUI'},
+                attach_logs=False
+            )
+            
+            if success:
+                QMessageBox.information(self, "Success", "Test email sent successfully!")
+            else:
+                QMessageBox.warning(self, "Failed", "Failed to send test email. Check configuration.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Email test failed: {e}")
+    
+    def send_test_siem_event(self):
+        """Send test event to SIEM"""
+        if not HAS_SIEM or not self.siem:
+            QMessageBox.warning(self, "Not Available", "SIEM integration not available")
+            return
+        
+        try:
+            # Update config from GUI
+            self.siem.config['enabled'] = self.siem_enabled_cb.isChecked()
+            self.siem.config['siem_server'] = self.siem_server.text()
+            self.siem.config['siem_port'] = self.siem_port.value()
+            self.siem.config['protocol'] = self.siem_protocol_combo.currentText().lower()
+            self.siem.config['format'] = self.siem_format_combo.currentText().lower().replace(' ', '')
+            
+            import time
+            test_event = {
+                'timestamp': time.time(),
+                'event_type': 'TEST_EVENT',
+                'severity': 'INFO',
+                'details': {'message': 'Test event from Anti-Ransomware GUI'}
+            }
+            
+            success = self.siem.send_event(test_event)
+            
+            if success:
+                QMessageBox.information(self, "Success", "Test event sent to SIEM successfully!")
+            else:
+                QMessageBox.warning(self, "Failed", "Failed to send test event. Check configuration.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"SIEM test failed: {e}")
+    
+    def save_alert_settings(self):
+        """Save alert configuration"""
+        try:
+            # Save email config
+            if HAS_EMAIL and self.email_alerter:
+                self.email_alerter.config['enabled'] = self.email_enabled_cb.isChecked()
+                self.email_alerter.config['from_email'] = self.email_from.text()
+                self.email_alerter.config['username'] = self.email_username.text()
+                self.email_alerter.config['password'] = self.email_password.text()
+                self.email_alerter.config['recipients'] = [
+                    r.strip() for r in self.email_recipients.toPlainText().split('\n') if r.strip()
+                ]
+                self.email_alerter.config['rate_limit']['max_emails_per_hour'] = self.max_emails_hour.value()
+                self.email_alerter.config['rate_limit']['max_emails_per_day'] = self.max_emails_day.value()
+                
+                # Save to file
+                import json
+                with self.email_alerter.config_file.open('w') as f:
+                    json.dump(self.email_alerter.config, f, indent=2)
+            
+            # Save SIEM config
+            if HAS_SIEM and self.siem:
+                self.siem.config['enabled'] = self.siem_enabled_cb.isChecked()
+                self.siem.config['siem_server'] = self.siem_server.text()
+                self.siem.config['siem_port'] = self.siem_port.value()
+                self.siem.config['protocol'] = self.siem_protocol_combo.currentText().lower()
+                
+                # Save to file
+                with self.siem.config_file.open('w') as f:
+                    json.dump(self.siem.config, f, indent=2)
+            
+            QMessageBox.information(self, "Success", "Alert settings saved successfully!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {e}")
+    
+    def start_shadow_protection(self):
+        """Start shadow copy monitoring"""
+        if not HAS_SHADOW or not self.shadow_protection:
+            QMessageBox.warning(self, "Not Available", "Shadow copy protection not available")
+            return
+        
+        try:
+            self.shadow_protection.start_monitoring()
+            self.shadow_protection_label.setText("Monitoring: ✅ Active")
+            self.shadow_protection_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+            self.start_shadow_btn.setEnabled(False)
+            self.stop_shadow_btn.setEnabled(True)
+            QMessageBox.information(self, "Started", "Shadow copy protection monitoring started")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to start monitoring: {e}")
+    
+    def stop_shadow_protection(self):
+        """Stop shadow copy monitoring"""
+        if not HAS_SHADOW or not self.shadow_protection:
+            return
+        
+        try:
+            self.shadow_protection.stop_monitoring()
+            self.shadow_protection_label.setText("Monitoring: Inactive")
+            self.shadow_protection_label.setStyleSheet("color: #ff6600;")
+            self.start_shadow_btn.setEnabled(True)
+            self.stop_shadow_btn.setEnabled(False)
+            QMessageBox.information(self, "Stopped", "Shadow copy protection monitoring stopped")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to stop monitoring: {e}")
+    
+    def refresh_shadow_copies(self):
+        """Refresh shadow copies list"""
+        if not HAS_SHADOW or not self.shadow_protection:
+            QMessageBox.warning(self, "Not Available", "Shadow copy protection not available")
+            return
+        
+        try:
+            shadows = self.shadow_protection.list_shadow_copies()
+            
+            self.shadow_copies_table.setRowCount(len(shadows))
+            
+            for i, shadow in enumerate(shadows):
+                self.shadow_copies_table.setItem(i, 0, QTableWidgetItem(shadow.get('id', 'N/A')[:50]))
+                self.shadow_copies_table.setItem(i, 1, QTableWidgetItem(shadow.get('volume', 'N/A')))
+                self.shadow_copies_table.setItem(i, 2, QTableWidgetItem(shadow.get('created', 'N/A')))
+                self.shadow_copies_table.setItem(i, 3, QTableWidgetItem(shadow.get('path', 'N/A')))
+            
+            # Update statistics
+            stats = self.shadow_protection.get_vss_statistics()
+            stats_text = f"Shadow Copies: {stats['shadows_count']}\n\n"
+            
+            for vol in stats['volumes']:
+                stats_text += f"Volume: {vol['volume']}\n"
+                stats_text += f"  Used: {vol.get('used', 'N/A')}\n"
+                stats_text += f"  Allocated: {vol.get('allocated', 'N/A')}\n"
+                stats_text += f"  Maximum: {vol.get('maximum', 'N/A')}\n\n"
+            
+            self.vss_stats.setText(stats_text)
+            
+            self.statusBar().showMessage(f"Found {len(shadows)} shadow copies")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to refresh: {e}")
+    
+    def create_shadow_copy(self):
+        """Create a new shadow copy"""
+        if not HAS_SHADOW or not self.shadow_protection:
+            QMessageBox.warning(self, "Not Available", "Shadow copy protection not available")
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Create Shadow Copy",
+            "Create a shadow copy for C: drive?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                success = self.shadow_protection.create_shadow_copy("C:")
+                
+                if success:
+                    QMessageBox.information(self, "Success", "Shadow copy created successfully!")
+                    self.refresh_shadow_copies()
+                else:
+                    QMessageBox.warning(self, "Failed", "Failed to create shadow copy")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Shadow copy creation failed: {e}")
+    
+    def configure_vss_storage(self):
+        """Configure VSS storage"""
+        if not HAS_SHADOW or not self.shadow_protection:
+            QMessageBox.warning(self, "Not Available", "Shadow copy protection not available")
+            return
+        
+        from PyQt6.QtWidgets import QInputDialog
+        size, ok = QInputDialog.getText(
+            self,
+            "Configure VSS Storage",
+            "Enter maximum storage size (e.g., 10GB, UNBOUNDED):",
+            text="10GB"
+        )
+        
+        if ok and size:
+            try:
+                success = self.shadow_protection.configure_vss_storage("C:", size)
+                
+                if success:
+                    QMessageBox.information(self, "Success", "VSS storage configured successfully!")
+                else:
+                    QMessageBox.warning(self, "Failed", "Failed to configure VSS storage")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"VSS configuration failed: {e}")
+
+
+
 
 
 def main():
