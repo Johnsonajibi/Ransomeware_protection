@@ -175,6 +175,18 @@ User-Mode Protection:                Kernel-Mode Protection:
 
 ```
 ╔════════════════════════════════════════════════════════════════════════╗
+║                          LAYER 0: BOOT PERSISTENCE                     ║
+║  ┌──────────────────────────────────────────────────────────────────┐  ║
+║  │ Early-Launch Anti-Malware (ELAM) Driver + TPM Verification      │  ║
+║  │ • Loads BEFORE ransomware (2nd after Windows kernel only)        │  ║
+║  │ • TPM verifies boot integrity on every startup                   │  ║
+║  │ • Protects against reboot-bypass attacks                         │  ║
+║  │ • Registry ACL protection prevents auto-start disabling          │  ║
+║  │ See: REBOOT_ATTACK_PROTECTION.md for full details               │  ║
+║  └──────────────────────────────────────────────────────────────────┘  ║
+╚════════════════════════════════════════════════════════════════════════╝
+                                   ↕
+╔════════════════════════════════════════════════════════════════════════╗
 ║                          LAYER 1: KERNEL PROTECTION                    ║
 ║  ┌──────────────────────────────────────────────────────────────────┐  ║
 ║  │ Windows Minifilter Driver (Ring 0)                               │  ║
@@ -182,6 +194,7 @@ User-Mode Protection:                Kernel-Mode Protection:
 ║  │ • Cannot be terminated by malware                                │  ║
 ║  │ • <5% performance overhead (kernel-optimized)                    │  ║
 ║  │ • Blocks operations BEFORE they hit filesystem                   │  ║
+║  │ • Survives reboots via ELAM/boot-start configuration             │  ║
 ║  └──────────────────────────────────────────────────────────────────┘  ║
 ╚════════════════════════════════════════════════════════════════════════╝
                                    ↕
