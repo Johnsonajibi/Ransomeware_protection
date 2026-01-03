@@ -72,9 +72,7 @@ class ShadowCopyProtection:
                 self.wmi_connection = wmi.WMI()
                 print("✓ WMI connection established for VSS monitoring")
             except Exception as e:
-                print(f"⚠️ WMI connection failed: {e}")
-        
-        print("✓ Shadow copy protection initialized")
+                pass  # WMI connection failed, will retry later
     
     def start_monitoring(self):
         """Start monitoring for shadow copy deletion attempts"""

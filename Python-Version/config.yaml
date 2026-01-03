@@ -26,10 +26,10 @@ detection:
 file_monitor:
   # Paths to monitor (will use defaults if not specified)
   watch_paths:
-    - "~\Documents"
-    - "~\Desktop"
-    - "~\Pictures"
-    - "~\Downloads"
+    - "C:\\Users\\$env:USERNAME\\Documents"
+    - "C:\\Users\\$env:USERNAME\\Desktop"
+    - "C:\\Users\\$env:USERNAME\\Pictures"
+    - "C:\\Users\\$env:USERNAME\\Downloads"
   
   # Paths to exclude from monitoring
   exclude_paths:
@@ -52,7 +52,7 @@ process_monitor:
 
 # Quarantine Settings
 quarantine:
-  directory: "C:\\ProgramData\\AntiRansomware\\quarantine"
+  directory: "./data/quarantine"
   auto_quarantine_threshold: 80  # Auto-quarantine if score >= this
   max_quarantine_days: 30  # Auto-delete files older than this
   max_quarantine_size_mb: 5000  # Maximum quarantine directory size
@@ -60,7 +60,7 @@ quarantine:
 # Backup & Recovery Settings
 backup:
   enable_auto_backup: true
-  backup_directory: "C:\\ProgramData\\AntiRansomware\\backups"
+  backup_directory: "./data/backups"
   backup_interval_hours: 6
   max_backup_age_days: 7
   vss_snapshot_enable: true

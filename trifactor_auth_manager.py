@@ -34,13 +34,13 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 try:
     from ar_token import TokenPayload, TokenHeader, TokenOps, CryptoAlgorithm
 except ImportError:
-    print("⚠️ ar_token.py not found, using fallback")
+    # ar_token.py not found, using fallback
     from auth_token import TokenPayload, TokenHeader, TokenOps, CryptoAlgorithm
 
 try:
     from enterprise_security_core import AdvancedDeviceFingerprint
 except ImportError:
-    print("⚠️ enterprise_security_core.py not found")
+    # enterprise_security_core.py not found
     AdvancedDeviceFingerprint = None
 
 # TPM integration
@@ -49,7 +49,7 @@ try:
     HAS_TPM = True
 except ImportError:
     HAS_TPM = False
-    print("⚠️ TPM integration not available")
+    # TPM integration not available
 
 # Library integrations (to be installed)
 try:
@@ -57,7 +57,7 @@ try:
     HAS_TRUSTCORE = True
 except ImportError:
     HAS_TRUSTCORE = False
-    print("⚠️ TrustCore-TPM not installed. Install with: pip install trustcore-tpm")
+    # TrustCore-TPM not installed
 
 try:
     from device_fingerprinting_pro import (
@@ -68,21 +68,21 @@ try:
     HAS_DEVICE_FP_PRO = True
 except ImportError:
     HAS_DEVICE_FP_PRO = False
-    print("⚠️ device-fingerprinting-pro not installed")
+    # device-fingerprinting-pro not installed
 
 try:
     from pqcdualusb import PostQuantumCrypto, UsbDriveDetector
     HAS_PQC_USB = True
 except ImportError:
     HAS_PQC_USB = False
-    print("⚠️ pqcdualusb not available")
+    # pqcdualusb not available
 
 try:
     import wmi
     HAS_WMI = True
 except ImportError:
     HAS_WMI = False
-    print("⚠️ wmi not available (VID/PID detection disabled)")
+    # wmi not available (VID/PID detection disabled)
 
 
 def is_admin() -> bool:
@@ -97,9 +97,7 @@ def is_admin() -> bool:
 def ensure_admin():
     """Ensure the process is running as administrator"""
     if not is_admin():
-        print("⚠️ WARNING: Not running as Administrator")
-        print("   TPM features require admin privileges")
-        print("   Run with: Right-click → 'Run as administrator'")
+        # Not running as Administrator - TPM features require admin privileges
         return False
     return True
 
@@ -966,17 +964,22 @@ class PQCUSBAuthenticator:
                 supposed_pub, supposed_priv = self.pqc_crypto.generate_sig_keypair()
                 self.keypair = (supposed_priv, supposed_pub)  # Swap to correct order
                 
+                import logging
+                logging.critical("PQC INITIALIZATION: Post-quantum cryptography (Kyber1024 + Dilithium3) initialized")
+                
                 # Initialize WMI for VID/PID detection
                 if HAS_WMI:
                     try:
                         self.wmi_connection = wmi.WMI()
-                        print("✓ WMI initialized for VID/PID detection")
+                        # WMI initialized for VID/PID detection
                     except Exception as e:
-                        print(f"⚠️ WMI init failed: {e}")
+                        # WMI init failed, skipping VID/PID detection
+                        pass
                 
-                print("✓ PQC USB authenticator initialized")
+                # PQC USB authenticator initialized
             except Exception as e:
-                print(f"⚠️ PQC USB init failed: {e}")
+                # PQC USB initialization failed
+                pass
     
     def get_enhanced_drive_info(self, drive: str) -> Dict:
         """Get enhanced drive info with VID/PID"""
@@ -1176,11 +1179,7 @@ class TriFactorAuthManager:
         self.token_metadata_dir = Path("data/token_metadata")
         self.token_metadata_dir.mkdir(parents=True, exist_ok=True)
         
-        print("\n=== Tri-Factor Auth Manager Initialized ===")
-        print(f"TPM Available: {self.tpm_manager.tpm_available}")
-        print(f"Device FP Layers: {6 + (6 if HAS_DEVICE_FP_PRO else 0)}")
-        print(f"PQC USB Available: {self.usb_auth.usb_detector is not None}")
-        print("=" * 45 + "\n")
+        # Tri-Factor Auth Manager Initialized
     
     def get_available_factors(self) -> List[str]:
         """Get list of available security factors"""

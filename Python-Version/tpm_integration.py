@@ -25,6 +25,13 @@ TPM_VERSION_20 = 2
 TBS_SUCCESS = 0
 TBS_E_TPM_NOT_FOUND = 0x8028400F
 TBS_E_INTERNAL_ERROR = 0x80284001
+TBS_E_SERVICE_NOT_RUNNING = 0x80284008
+TBS_E_ACCESS_DENIED = 0x80284012
+TBS_E_INVALID_CONTEXT = 0x80284004
+
+# NCrypt constants
+NCRYPT_SUCCESS = 0
+MS_PLATFORM_CRYPTO_PROVIDER = "Microsoft Platform Crypto Provider"
 
 # PCR (Platform Configuration Register) indices
 PCR_BOOT = 0
@@ -32,21 +39,35 @@ PCR_FIRMWARE = 1
 PCR_KERNEL = 2
 PCR_APP = 7
 
-# Load Windows TPM APIs
-try:
-    tbs = ctypes.WinDLL('tbs.dll', use_last_error=True)
-    ncrypt = ctypes.WinDLL('ncrypt.dll', use_last_error=True)
-    HAS_TPM_API = True
-except Exception as e:
-    HAS_TPM_API = False
-    logger.warning(f"TPM APIs not available: {e}")
-
-
+# TBS Context Parameters structure
 class TBS_CONTEXT_PARAMS(ctypes.Structure):
     """TBS context parameters"""
     _fields_ = [
         ("version", wintypes.DWORD)
     ]
+
+# Load Windows TPM APIs
+try:
+    # Try NCrypt first (higher-level, more reliable)
+    ncrypt = ctypes.WinDLL('ncrypt.dll', use_last_error=True)
+    
+    # NCryptOpenStorageProvider
+    ncrypt.NCryptOpenStorageProvider.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE),
+        wintypes.LPCWSTR,
+        wintypes.DWORD
+    ]
+    ncrypt.NCryptOpenStorageProvider.restype = wintypes.LONG
+    
+    # NCryptFreeObject
+    ncrypt.NCryptFreeObject.argtypes = [wintypes.HANDLE]
+    ncrypt.NCryptFreeObject.restype = wintypes.LONG
+    
+    HAS_TPM_API = True
+    logger.info("NCrypt TPM API loaded successfully")
+except Exception as e:
+    HAS_TPM_API = False
+    logger.warning(f"TPM APIs not available: {e}")
 
 
 class TPMManager:
@@ -58,40 +79,53 @@ class TPMManager:
     def __init__(self):
         """Initialize TPM manager"""
         self.tpm_available = False
-        self.tbs_context = None
+        self.provider_handle = None
         self.sealed_keys = {}
         
         if HAS_TPM_API:
             self._initialize_tpm()
     
     def _initialize_tpm(self) -> bool:
-        """Initialize TPM Base Services"""
+        """Initialize TPM using NCrypt Platform Crypto Provider"""
         try:
-            # Create context parameters
-            params = TBS_CONTEXT_PARAMS()
-            params.version = TPM_VERSION_20
+            # Check if running as administrator
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            if not is_admin:
+                logger.warning("Running without Administrator privileges. TPM may have limited functionality.")
             
-            # Open TBS context
-            context = wintypes.LPVOID()
-            result = tbs.Tbsi_Context_Create(
-                ctypes.byref(params),
-                ctypes.byref(context)
+            # Open Platform Crypto Provider (TPM-backed)
+            provider_handle = wintypes.HANDLE()
+            
+            logger.info(f"Opening {MS_PLATFORM_CRYPTO_PROVIDER}...")
+            result = ncrypt.NCryptOpenStorageProvider(
+                ctypes.byref(provider_handle),
+                MS_PLATFORM_CRYPTO_PROVIDER,
+                0  # dwFlags
             )
             
-            if result == TBS_SUCCESS:
-                self.tbs_context = context
+            # Get last error
+            last_error = ctypes.get_last_error()
+            
+            logger.info(f"NCryptOpenStorageProvider returned: 0x{result:08X}, LastError: {last_error}")
+            
+            if result == NCRYPT_SUCCESS:
+                self.provider_handle = provider_handle
                 self.tpm_available = True
-                logger.info("✓ TPM 2.0 initialized successfully")
+                logger.info("✓ TPM 2.0 initialized successfully via NCrypt")
                 return True
-            elif result == TBS_E_TPM_NOT_FOUND:
-                logger.warning("TPM device not found")
-                return False
             else:
-                logger.error(f"TPM initialization failed: 0x{result:X}")
+                logger.error(f"Failed to open TPM provider. Error: 0x{result:08X}")
+                logger.info("Troubleshooting steps:")
+                logger.info("  1. Verify TPM is enabled in BIOS/UEFI")
+                logger.info("  2. Check TPM status: Get-Tpm")
+                logger.info("  3. Ensure Windows TPM services are running")
                 return False
         
         except Exception as e:
-            logger.error(f"Error initializing TPM: {e}")
+            logger.error(f"Exception initializing TPM: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return False
             return False
     
     def is_available(self) -> bool:
@@ -435,10 +469,10 @@ class TPMManager:
     def cleanup(self):
         """Cleanup TPM resources"""
         try:
-            if self.tbs_context:
-                tbs.Tbsip_Context_Close(self.tbs_context)
-                self.tbs_context = None
-                logger.info("TPM context closed")
+            if self.provider_handle:
+                ncrypt.NCryptFreeObject(self.provider_handle)
+                self.provider_handle = None
+                logger.info("TPM provider handle released")
         
         except Exception as e:
             logger.error(f"Error cleaning up TPM: {e}")
@@ -457,7 +491,7 @@ class TPMKeyManager:
             tpm: TPM manager instance
         """
         self.tpm = tpm
-        self.key_storage_path = "C:\\ProgramData\\AntiRansomware\\tpm_keys"
+        self.key_storage_path = "./data/tpm_keys"
         os.makedirs(self.key_storage_path, exist_ok=True)
     
     def store_encryption_key(self, key: bytes, key_id: str) -> bool:

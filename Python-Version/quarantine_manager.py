@@ -47,11 +47,7 @@ class QuarantineManager:
             )
         
         if db_path is None:
-            db_path = os.path.join(
-                os.getenv('PROGRAMDATA', 'C:\\ProgramData'),
-                'AntiRansomware',
-                'quarantine.db'
-            )
+            db_path = os.path.join(quarantine_dir, 'quarantine.db')
         
         self.quarantine_dir = quarantine_dir
         self.db_path = db_path

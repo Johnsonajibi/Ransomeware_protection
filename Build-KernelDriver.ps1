@@ -148,6 +148,17 @@ $compileArgs = @(
     "/D", "_X86_=0"
     "/D", "_AMD64_=100"
     "/D", "_M_AMD64=100"
+    "/D", "_AMD64_=1"
+    "/D", "_AMD64"
+    "/D", "AMD64"
+    "/D", "WIN64"
+    "/D", "_WIN64"
+    "/D", "WINNT"
+    "/D", "_WIN32_WINNT=0x0A00"
+    "/D", "WINVER=0x0A00"
+    "/D", "NTDDI_VERSION=0x0A00000A"
+    "/D", "UNICODE"
+    "/D", "_UNICODE"
     "/Gm-"
     "/EHsc"
     "/MD"
@@ -165,7 +176,6 @@ $compileArgs = @(
     "/kernel"
     "/I$wdkInclude\km"
     "/I$wdkInclude\shared"
-    "/I$wdkInclude\um"
     $DriverSource
 )
 

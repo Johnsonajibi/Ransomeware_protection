@@ -83,8 +83,6 @@ class EmergencyKillSwitch:
         
         # Check if already in lockdown
         self._check_lockdown_status()
-        
-        print("✓ Emergency kill switch initialized")
     
     def _load_config(self) -> Dict:
         """Load kill switch configuration"""
@@ -138,16 +136,9 @@ class EmergencyKillSwitch:
         """
         
         if self.lockdown_active:
-            print("⚠️ Lockdown already active")
             return
         
-        print("\n" + "🚨 "*30)
-        print("EMERGENCY LOCKDOWN ACTIVATED")
-        print("="*60)
-        print(f"Reason: {reason}")
-        print(f"Triggered by: {triggered_by or os.getlogin() if hasattr(os, 'getlogin') else 'SYSTEM'}")
-        print(f"Timestamp: {datetime.now().isoformat()}")
-        print("="*60)
+        logging.critical(f"EMERGENCY KILL SWITCH ACTIVATED: {reason} (Triggered by: {triggered_by or 'SYSTEM'})")
         
         # Create lockdown marker
         try:
@@ -160,35 +151,28 @@ class EmergencyKillSwitch:
             )
             self.lockdown_active = True
         except Exception as e:
-            print(f"⚠️ Failed to create lockdown marker: {e}")
+            logging.critical(f"EMERGENCY KILL SWITCH: Failed to create lockdown marker - {e}")
         
         # Step 1: Block all protected paths
-        print("\n1. Blocking all protected resources...")
         self._emergency_block_all()
         
         # Step 2: Terminate suspicious processes
         if self.config['auto_terminate_suspicious']:
-            print("\n2. Terminating suspicious processes...")
             self._terminate_suspicious_processes()
         
         # Step 3: Network isolation (if enabled)
         if self.config['network_isolation_enabled']:
-            print("\n3. Isolating network adapters...")
             self._disable_network_adapters()
         
         # Step 4: Show desktop alert
         if self.config['notification_enabled']:
-            print("\n4. Showing desktop alert...")
             self._show_lockdown_alert()
         
         # Step 5: Log the lockdown
-        print("\n5. Logging lockdown event...")
         if self.logger:
             self.logger.log_emergency_lockdown(reason, triggered_by or 'SYSTEM')
-            print("   ✓ Event logged with cryptographic signature")
         
         # Step 6: Send email alerts
-        print("\n6. Sending email alerts...")
         if self.email_alerter:
             alert_details = {
                 'reason': reason,
@@ -208,17 +192,6 @@ class EmergencyKillSwitch:
                 details=alert_details,
                 attach_logs=True
             )
-        
-        print("\n" + "="*60)
-        print("🚨 EMERGENCY LOCKDOWN COMPLETE")
-        print("="*60)
-        print("\nAll protected resources are now DENIED")
-        print("No access will be granted until lockdown is lifted")
-        print("\nTo lift lockdown:")
-        print("  1. Verify system is clean")
-        print("  2. Run: python emergency_kill_switch.py --lift")
-        print("  3. Provide admin authorization")
-        print("="*60 + "\n")
     
     def _emergency_block_all(self):
         """Block all protected paths immediately"""

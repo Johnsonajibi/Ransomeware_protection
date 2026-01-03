@@ -25,7 +25,7 @@ try:
     DILITHIUM_AVAILABLE = True
 except ImportError:
     DILITHIUM_AVAILABLE = False
-    print("Warning: Dilithium library not available")
+    # Dilithium is optional - system works without it
 
 # Constants
 ED25519_SIG_SIZE = 64

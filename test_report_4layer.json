@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-01-01T11:47:32.304013",
+  "summary": {
+    "passed": 11,
+    "failed": 0,
+    "warnings": 3,
+    "total": 14,
+    "success_rate": 78.57142857142857
+  },
+  "tests": [
+    {
+      "timestamp": "2026-01-01T11:47:32.155028",
+      "test": "Test Environment Setup",
+      "status": "PASS",
+      "message": "Created 5 test files"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.187642",
+      "test": "Kernel Driver Status",
+      "status": "WARN",
+      "message": "Driver status: stopped"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.189710",
+      "test": "Admin Privileges",
+      "status": "WARN",
+      "message": "Not running as admin - CFA requires admin"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.203935",
+      "test": "NTFS Permission Read",
+      "status": "PASS",
+      "message": "Can read security descriptors"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.203935",
+      "test": "NTFS Permission Modification",
+      "status": "PASS",
+      "message": "Can modify NTFS permissions"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Encryption Module",
+      "status": "PASS",
+      "message": "CryptographicProtection available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Encryption Implementation",
+      "status": "PASS",
+      "message": "Encryption engine ready (1400 bytes test file)"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Complete Protection Method",
+      "status": "PASS",
+      "message": "apply_complete_protection available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Kernel Driver Layer",
+      "status": "PASS",
+      "message": "Kernel layer method available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "CFA Layer",
+      "status": "PASS",
+      "message": "CFA layer method available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "NTFS Layer",
+      "status": "PASS",
+      "message": "NTFS layer method available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Encryption Layer",
+      "status": "PASS",
+      "message": "Encryption layer method available"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "4-Layer Protection",
+      "status": "PASS",
+      "message": "All components integrated"
+    },
+    {
+      "timestamp": "2026-01-01T11:47:32.302507",
+      "test": "Desktop App Check",
+      "status": "WARN",
+      "message": "'charmap' codec can't decode byte 0x8f in position 13221: character maps to <undefined>"
+    }
+  ]
+}

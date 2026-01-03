@@ -31,7 +31,6 @@ try:
     HAS_LOGGER = True
 except ImportError:
     HAS_LOGGER = False
-    print("⚠️ Security event logger not available")
 
 
 class SIEMIntegration:
@@ -115,8 +114,6 @@ class SIEMIntegration:
         # Event counter
         self.events_sent = 0
         self.events_failed = 0
-        
-        print("✓ SIEM integration initialized")
     
     def _load_config(self) -> Dict:
         """Load SIEM configuration"""

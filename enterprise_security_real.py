@@ -28,7 +28,9 @@ try:
     print("   - device-fingerprinting-pro: Advanced device binding")
 except ImportError as e:
     ENTERPRISE_AVAILABLE = False
-    print(f"⚠️ Enterprise libraries not available: {e}")
+    print(f"ℹ️ Enterprise libraries unavailable (optional proprietary packages): {e}")
+    print("   → Application will use standard protection mode")
+    print("   → For enterprise features, install: device-fingerprinting-pro, pqcdualusb")
 
 
 class EnterpriseSecurityManager:

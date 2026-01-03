@@ -32,7 +32,6 @@ try:
     HAS_LOGGER = True
 except ImportError:
     HAS_LOGGER = False
-    print("⚠️ Security event logger not available")
 
 
 class EmailAlertingSystem:
@@ -94,8 +93,6 @@ class EmailAlertingSystem:
         
         # Event logger
         self.logger = SecurityEventLogger() if HAS_LOGGER else None
-        
-        print("✓ Email alerting system initialized")
     
     def _load_config(self) -> Dict:
         """Load email configuration"""

@@ -29,7 +29,6 @@ try:
     HAS_PQC = True
 except ImportError:
     HAS_PQC = False
-    print("⚠️ PQC not available - signatures disabled")
 
 
 @dataclass
@@ -72,7 +71,6 @@ class SecurityEventLogger:
             except (PermissionError, OSError):
                 # Fall back to user directory
                 log_dir = Path(os.getenv('LOCALAPPDATA', os.path.expanduser('~'))) / 'AntiRansomware'
-                print("⚠️ Using user directory (run as admin for system-wide logs)")
         
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -85,9 +83,6 @@ class SecurityEventLogger:
         self.authenticator = None
         if HAS_PQC:
             self.authenticator = PQCUSBAuthenticator()
-            print("✓ Security event logger initialized with PQC signatures")
-        else:
-            print("⚠️ Security event logger initialized without signatures")
     
     def log_event(self, event: SecurityEvent) -> bool:
         """
@@ -179,7 +174,6 @@ class SecurityEventLogger:
             
             # Verify hash matches
             if event_hash.hex() != signed_event['event_hash']:
-                print("❌ Event hash mismatch - TAMPERING DETECTED")
                 return False
             
             # Verify signature
@@ -191,16 +185,13 @@ class SecurityEventLogger:
                 )
                 
                 if not is_valid:
-                    print("❌ Invalid signature - TAMPERING DETECTED")
                     return False
                 
                 return True
             
-            print("⚠️ Cannot verify - PQC not available")
             return False
             
         except Exception as e:
-            print(f"❌ Verification failed: {e}")
             return False
     
     def get_events(self, 
@@ -486,8 +477,6 @@ if __name__ == '__main__':
         print(f"\n⚠️ WARNING: {len(results['tampered_events'])} tampered events detected!")
         for tampered in results['tampered_events']:
             print(f"  Line {tampered['line']}: {tampered['event_type']}")
-    else:
-        print("\n✓ All events verified - No tampering detected")
     
     # Get recent critical events
     print("\n5. Recent critical events:")
@@ -497,6 +486,6 @@ if __name__ == '__main__':
         print(f"  [{evt['event_type']}] {datetime.fromtimestamp(evt['timestamp']).isoformat()}")
     
     print("\n" + "="*60)
-    print("✓ Security Event Logger Test Complete")
+    print("Security Event Logger Test Complete")
     print("="*60)
     print(f"\nLog file: {logger.event_log}")

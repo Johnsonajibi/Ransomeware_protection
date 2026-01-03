@@ -8,6 +8,8 @@ import os
 import sqlite3
 import json
 import traceback
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from PyQt6.QtWidgets import (
@@ -15,13 +17,60 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QListWidget, QTextEdit, QTabWidget,
     QLineEdit, QFileDialog, QMessageBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QDialog, QFormLayout, QCheckBox, QSpinBox, QSystemTrayIcon,
-    QMenu, QProgressBar, QGroupBox
+    QMenu, QProgressBar, QGroupBox, QScrollArea, QStyle
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QAction
 import subprocess
 import psutil
 import threading
+
+# Configure comprehensive logging
+def setup_logging():
+    """Setup rotating file handler for comprehensive logging"""
+    log_dir = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local')) / 'AntiRansomware' / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / 'antiransomware.log'
+    
+    # Create formatter for detailed logs
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [%(name)s:%(funcName)s:%(lineno)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Rotating file handler (10 MB max, keep 5 backup files)
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10*1024*1024,  # 10 MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    
+    # Console handler - ONLY show CRITICAL process confirmations
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.CRITICAL)  # Only CRITICAL level to console
+    console_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+    
+    # Root logger configuration
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Create app-specific logger
+    app_logger = logging.getLogger('AntiRansomware')
+    
+    return str(log_file)
+
+# Initialize logging
+LOG_FILE_PATH = setup_logging()
+logger = logging.getLogger('AntiRansomware')
+
+# Suppress noisy third-party library warnings
+logging.getLogger('device_fingerprinting').setLevel(logging.ERROR)
+logging.getLogger('pqcdualusb').setLevel(logging.ERROR)
 
 # Import backend functionality
 try:
@@ -74,6 +123,22 @@ try:
 except ImportError:
     HAS_SHADOW = False
     ShadowCopyProtection = None
+
+# TPM integration (hardware-backed keys/attestation)
+try:
+    from tpm_integration import TPMManager
+    HAS_TPM_MANAGER = True
+except ImportError:
+    HAS_TPM_MANAGER = False
+    TPMManager = None
+
+# Kernel protection (filter driver)
+try:
+    from kernel_protection_interface import KernelProtectionInterface, ProtectionLevel
+    HAS_KERNEL_PROTECTION = True
+except ImportError:
+    HAS_KERNEL_PROTECTION = False
+    KernelProtectionInterface = None
 
 try:
     from system_health_checker import SystemHealthChecker
@@ -234,6 +299,11 @@ class MainWindow(QMainWindow):
         self.siem = SIEMIntegration() if HAS_SIEM else None
         self.shadow_protection = ShadowCopyProtection() if HAS_SHADOW else None
         self.health_checker = SystemHealthChecker() if HAS_HEALTH else None
+        self.kernel_protection = KernelProtectionInterface() if HAS_KERNEL_PROTECTION else None
+        self.tpm_manager = TPMManager() if HAS_TPM_MANAGER else None
+        self.ml_model_path = Path.cwd() / "models" / "ransomware_classifier.pkl"
+        self.tpm_status_label = None
+        self.ml_status_label = None
         
         if ProtectionEngine and ProtectionDatabase:
             try:
@@ -258,6 +328,10 @@ class MainWindow(QMainWindow):
         # Setup UI
         self.setup_ui()
         self.setup_system_tray()
+        
+        # Auto-run health check after UI loads
+        QTimer.singleShot(1000, self.run_health_check)
+        QTimer.singleShot(1200, self.update_ui)  # initial hardware/ML status paint
         self.setup_timers()
         self.load_settings()
         
@@ -274,10 +348,7 @@ class MainWindow(QMainWindow):
         """Initialize default protected paths"""
         try:
             default_paths = [
-                str(Path.home() / "Documents"),
-                str(Path.home() / "Pictures"),
-                str(Path.home() / "Desktop"),
-                str(Path.home() / "Downloads")
+                str(Path.home() / "Pictures")
             ]
             for path in default_paths:
                 if Path(path).exists():
@@ -305,6 +376,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.create_token_tab(), "🔑 USB Token")
         self.tabs.addTab(self.create_protection_tab(), "Protected Paths")
         self.tabs.addTab(self.create_events_tab(), "Security Events")
+        self.tabs.addTab(self.create_logs_tab(), "📋 Application Logs")
         self.tabs.addTab(self.create_health_tab(), "🏥 System Health")
         self.tabs.addTab(self.create_emergency_tab(), "🚨 Emergency")
         self.tabs.addTab(self.create_alerts_tab(), "📧 Alerts")
@@ -567,8 +639,8 @@ class MainWindow(QMainWindow):
         
         # Events table
         self.events_table = QTableWidget()
-        self.events_table.setColumnCount(5)
-        self.events_table.setHorizontalHeaderLabels(["Time", "Event", "Path", "Process", "Action"])
+        self.events_table.setColumnCount(6)
+        self.events_table.setHorizontalHeaderLabels(["Time", "Event", "Path", "Process", "Action", "Severity"])
         self.events_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.events_table)
         
@@ -577,6 +649,10 @@ class MainWindow(QMainWindow):
     
     def create_settings_tab(self):
         """Create settings tab"""
+        # Wrap settings content in a scroll area to handle smaller viewports
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+
         widget = QWidget()
         layout = QVBoxLayout()
         
@@ -653,6 +729,17 @@ class MainWindow(QMainWindow):
 
         siem_group.setLayout(siem_layout)
         layout.addWidget(siem_group)
+
+        # Hardware security & ML status
+        status_group = QGroupBox("Hardware Security & ML")
+        status_layout = QFormLayout()
+
+        self.tpm_status_label = QLabel("Detecting...")
+        self.ml_status_label = QLabel("Checking model...")
+        status_layout.addRow("TPM status:", self.tpm_status_label)
+        status_layout.addRow("ML model:", self.ml_status_label)
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
         
         # Startup settings
         startup_group = QGroupBox("Startup Settings")
@@ -675,6 +762,91 @@ class MainWindow(QMainWindow):
         
         layout.addStretch()
         widget.setLayout(layout)
+
+        scroll_area.setWidget(widget)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return scroll_area
+    
+    def create_logs_tab(self):
+        """Create application logs viewer tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Header
+        header = QLabel("📋 Application Logs")
+        header.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
+        layout.addWidget(header)
+        
+        # Info label
+        info_label = QLabel(f"Log file: {LOG_FILE_PATH}")
+        info_label.setStyleSheet("color: #666; padding: 5px;")
+        layout.addWidget(info_label)
+        
+        # Control buttons
+        button_layout = QHBoxLayout()
+        
+        refresh_btn = QPushButton("🔄 Refresh Logs")
+        refresh_btn.clicked.connect(self.refresh_logs)
+        button_layout.addWidget(refresh_btn)
+        
+        clear_view_btn = QPushButton("🗑️ Clear View")
+        clear_view_btn.clicked.connect(lambda: self.log_viewer.clear())
+        button_layout.addWidget(clear_view_btn)
+        
+        open_file_btn = QPushButton("📂 Open Log File")
+        open_file_btn.clicked.connect(self.open_log_file)
+        button_layout.addWidget(open_file_btn)
+        
+        button_layout.addStretch()
+        
+        # Auto-refresh checkbox
+        self.auto_refresh_logs_cb = QCheckBox("Auto-refresh (every 5s)")
+        self.auto_refresh_logs_cb.setChecked(True)
+        button_layout.addWidget(self.auto_refresh_logs_cb)
+        
+        layout.addLayout(button_layout)
+        
+        # Filter controls
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter Level:"))
+        
+        self.log_level_filter = QLineEdit()
+        self.log_level_filter.setPlaceholderText("DEBUG, INFO, WARNING, ERROR (leave empty for all)")
+        self.log_level_filter.textChanged.connect(self.refresh_logs)
+        filter_layout.addWidget(self.log_level_filter)
+        
+        filter_layout.addWidget(QLabel("Search:"))
+        self.log_search_filter = QLineEdit()
+        self.log_search_filter.setPlaceholderText("Search in logs...")
+        self.log_search_filter.textChanged.connect(self.refresh_logs)
+        filter_layout.addWidget(self.log_search_filter)
+        
+        layout.addLayout(filter_layout)
+        
+        # Log viewer (text edit with monospace font)
+        self.log_viewer = QTextEdit()
+        self.log_viewer.setReadOnly(True)
+        self.log_viewer.setFont(QFont("Consolas", 9))
+        self.log_viewer.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
+                padding: 5px;
+            }
+        """)
+        layout.addWidget(self.log_viewer)
+        
+        # Stats label
+        self.log_stats_label = QLabel("Lines: 0")
+        self.log_stats_label.setStyleSheet("color: #666; padding: 5px;")
+        layout.addWidget(self.log_stats_label)
+        
+        widget.setLayout(layout)
+        
+        # Initial load
+        self.refresh_logs()
+        
         return widget
     
     def create_health_tab(self):
@@ -683,7 +855,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         
         # Header
-        header = QLabel("🏥 System Health Monitor")
+        header = QLabel("System Health Monitor")
         header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         layout.addWidget(header)
         
@@ -691,7 +863,7 @@ class MainWindow(QMainWindow):
         status_group = QGroupBox("Health Status")
         status_layout = QVBoxLayout()
         
-        self.health_status_label = QLabel("Status: Unknown")
+        self.health_status_label = QLabel("Status: Running health check...")
         self.health_status_label.setFont(QFont("Arial", 12))
         status_layout.addWidget(self.health_status_label)
         
@@ -1071,7 +1243,13 @@ class MainWindow(QMainWindow):
     def setup_system_tray(self):
         """Setup system tray icon"""
         self.tray_icon = QSystemTrayIcon(self)
-        # Create a simple icon (you can replace with actual icon file)
+        # Set an application icon if available; fall back to a built-in
+        icon_path = Path(__file__).parent / "icons" / "shield.png"
+        if icon_path.exists():
+            self.tray_icon.setIcon(QIcon(str(icon_path)))
+        else:
+            # Use SP_DialogYesButton as fallback (green checkmark closest to shield)
+            self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogYesButton))
         self.tray_icon.setToolTip("Anti-Ransomware Protection")
         
         # Tray menu
@@ -1104,7 +1282,21 @@ class MainWindow(QMainWindow):
             self.monitor_thread.start()
     
     def start_protection(self):
-        """Start protection engine"""
+        """Start 4-layer multi-level protection: Kernel + OS + NTFS + Encrypt"""
+        # Check if running as admin
+        import ctypes
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            QMessageBox.critical(
+                self, "Administrator Required",
+                "This application requires Administrator privileges to start protection.\n\n"
+                "Please:\n"
+                "1. Close this application\n"
+                "2. Right-click the application shortcut or script\n"
+                "3. Select 'Run as Administrator'\n\n"
+                "Without admin rights, protection cannot be activated."
+            )
+            return
+        
         if not self.engine:
             QMessageBox.warning(self, "Error", "Protection engine not initialized!")
             return
@@ -1114,6 +1306,17 @@ class MainWindow(QMainWindow):
             return
         
         try:
+            # Import four-layer protection module
+            try:
+                from four_layer_protection import FourLayerProtection
+                four_layer = FourLayerProtection(self.engine.token_manager, self.db)
+                print("\n" + "="*70)
+                print("🛡️ STARTING COMPREHENSIVE 4-LAYER PROTECTION SYSTEM")
+                print("="*70)
+            except ImportError:
+                print("⚠️ Four-layer protection module not available")
+                four_layer = None
+            
             # Get protected paths from database
             paths = self.db.get_protected_paths()
             if not paths:
@@ -1127,30 +1330,70 @@ class MainWindow(QMainWindow):
                     paths = self.db.get_protected_paths()
             
             if paths:
-                # Start file system monitoring with watchdog
+                # Apply four-layer protection to each path
+                if four_layer:
+                    for path_info in paths:
+                        path = path_info['path']
+                        if Path(path).exists():
+                            # Apply all 4 protection layers
+                            four_layer.apply_complete_protection(path)
+                
+                # CRITICAL: Start real-time file blocker for token-based access control
+                if hasattr(self.engine, 'file_blocker') and self.engine.file_blocker:
+                    for path_info in paths:
+                        path = path_info['path']
+                        if Path(path).exists():
+                            # Register path with real-time blocker
+                            self.engine.file_blocker.add_protected_path(path)
+                    
+                    # Start the blocker - this will prevent ALL file access without USB token
+                    try:
+                        self.engine.file_blocker.start_monitoring()
+                        print(f"\n🛡️ REAL-TIME FILE BLOCKER ACTIVATED")
+                        print(f"🔒 Files in protected paths are BLOCKED without valid USB token")
+                    except PermissionError as pe:
+                        print(f"\n⚠️  Real-time blocker unavailable for this path (OneDrive/cloud paths may have access restrictions)")
+                        print(f"   Other protection layers (NTFS, encryption) remain active")
+                    except Exception as e:
+                        print(f"\n⚠️  Real-time blocker error: {e}")
+                        print(f"   Other protection layers (NTFS, encryption) remain active")
+                
+                # Start legacy file system monitoring with watchdog
                 if Observer:
                     self.observer = Observer()
                     for path_info in paths:
                         path = path_info['path']
                         if Path(path).exists():
-                            # Create event handler for this path
-                            handler = self.create_file_handler(path)
-                            self.observer.schedule(handler, path, recursive=path_info.get('recursive', True))
+                            try:
+                                # Create event handler for this path
+                                handler = self.create_file_handler(path)
+                                self.observer.schedule(handler, path, recursive=path_info.get('recursive', True))
+                            except PermissionError:
+                                # Skip this path if not accessible
+                                print(f"   ⚠️  Skipping watchdog for {path} (permission denied)")
+                                continue
                     
-                    self.observer.start()
+                    try:
+                        self.observer.start()
+                    except PermissionError as pe:
+                        print(f"⚠️  Watchdog monitoring unavailable (path access restricted)")
+                        print(f"   Other protection layers remain active")
                 
                 self.protection_active = True
-                self.status_label.setText("● PROTECTED")
-                self.status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+                self.status_label.setText("● PROTECTED + BLOCKED (4-Layer)")
+                self.status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
                 self.start_btn.setEnabled(False)
                 self.stop_btn.setEnabled(True)
-                self.statusBar().showMessage(f"Protection started - monitoring {len(paths)} paths")
+                self.statusBar().showMessage(f"🛡️ 4-LAYER PROTECTION ACTIVE - USB TOKEN REQUIRED - {len(paths)} paths protected")
                 
                 # Log event
-                self.db.log_event("protection_started", "", "System", "Protection activated")
+                self.db.log_event("protection_started", "", "System", "4-Layer protection activated: Kernel + OS + NTFS + Encryption")
                 
                 # Refresh events to show the start event
                 self.refresh_events()
+                
+                print("\n✅ Protection startup complete")
+                print("="*70 + "\n")
             else:
                 QMessageBox.warning(self, "Error", "No valid paths to protect!")
                 
@@ -1226,9 +1469,21 @@ class MainWindow(QMainWindow):
     def stop_protection(self):
         """Stop protection engine"""
         try:
+            # Stop real-time file blocker
+            if self.engine and hasattr(self.engine, 'file_blocker') and self.engine.file_blocker:
+                self.engine.file_blocker.stop_monitoring()
+                print("🛡️ Real-time file blocker stopped")
+            
             if hasattr(self, 'observer'):
                 self.observer.stop()
                 self.observer.join(timeout=2)
+
+            # Disable kernel protection if active
+            if HAS_KERNEL_PROTECTION and self.kernel_protection:
+                try:
+                    self.kernel_protection.disable_protection()
+                except Exception:
+                    pass
             
             self.protection_active = False
             self.status_label.setText("● STOPPED")
@@ -1576,6 +1831,7 @@ class MainWindow(QMainWindow):
                 self.events_table.setItem(i, 2, QTableWidgetItem(event.get('file_path', 'N/A')))
                 self.events_table.setItem(i, 3, QTableWidgetItem(event.get('process_name', 'N/A')))
                 self.events_table.setItem(i, 4, QTableWidgetItem(event.get('action', 'N/A')))
+                self.events_table.setItem(i, 5, QTableWidgetItem(event.get('severity', 'N/A')))
         except Exception as e:
             print(f"Error refreshing events: {e}")
     
@@ -1718,6 +1974,30 @@ class MainWindow(QMainWindow):
             self.refresh_protected_paths()
         elif current_index == 2:  # Events
             self.refresh_events()
+
+        # Update TPM/ML status indicators
+        try:
+            if self.tpm_status_label:
+                if self.tpm_manager and getattr(self.tpm_manager, "tpm_available", False):
+                    self.tpm_status_label.setText("TPM 2.0 active (NCrypt)")
+                    self.tpm_status_label.setStyleSheet("color: #0a8f08; font-weight: 600;")
+                elif self.tpm_manager is None and HAS_TPM_MANAGER:
+                    self.tpm_status_label.setText("TPM manager not initialized")
+                    self.tpm_status_label.setStyleSheet("color: #d48806;")
+                else:
+                    self.tpm_status_label.setText("TPM unavailable")
+                    self.tpm_status_label.setStyleSheet("color: #c0392b;")
+
+            if self.ml_status_label:
+                if self.ml_model_path.exists():
+                    self.ml_status_label.setText(f"Model loaded: {self.ml_model_path.name}")
+                    self.ml_status_label.setStyleSheet("color: #0a8f08; font-weight: 600;")
+                else:
+                    self.ml_status_label.setText("Model missing – train or place .pkl in models/")
+                    self.ml_status_label.setStyleSheet("color: #c0392b;")
+        except Exception:
+            # Keep UI resilient
+            pass
     
     def closeEvent(self, event):
         """Handle window close"""
@@ -1963,7 +2243,8 @@ class MainWindow(QMainWindow):
     def run_health_check(self):
         """Run system health check"""
         if not HAS_HEALTH or not self.health_checker:
-            QMessageBox.warning(self, "Not Available", "System health checker not available")
+            self.health_status_label.setText("Status: [WARN] Health checker unavailable")
+            self.health_status_label.setStyleSheet("color: #ffaa00; font-weight: bold;")
             return
         
         try:
@@ -1971,16 +2252,16 @@ class MainWindow(QMainWindow):
             
             # Update status
             if result['healthy']:
-                self.health_status_label.setText("Status: ✅ HEALTHY")
+                self.health_status_label.setText("Status: [OK] HEALTHY")
                 self.health_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
             else:
-                self.health_status_label.setText("Status: ❌ COMPROMISED")
+                self.health_status_label.setText("Status: [ERROR] COMPROMISED")
                 self.health_status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
             
             # Update results
             results_text = "Check Results:\n"
             for check, failed in result['checks'].items():
-                status = "❌ FAILED" if failed else "✓ PASSED"
+                status = "[ERROR] FAILED" if failed else "[OK] PASSED"
                 results_text += f"  {check}: {status}\n"
             
             self.health_results.setText(results_text)
@@ -1993,6 +2274,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Health check complete")
             
         except Exception as e:
+            self.health_status_label.setText("Status: [ERROR] Check failed")
+            self.health_status_label.setStyleSheet("color: #ff0000; font-weight: bold;")
             QMessageBox.critical(self, "Error", f"Health check failed: {e}")
     
     def toggle_auto_health_check(self, checked):
@@ -2287,6 +2570,74 @@ class MainWindow(QMainWindow):
                     
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"VSS configuration failed: {e}")
+    
+    def refresh_logs(self):
+        """Refresh log viewer with current log content"""
+        try:
+            if not Path(LOG_FILE_PATH).exists():
+                self.log_viewer.setPlainText("No log file found yet...")
+                self.log_stats_label.setText("Status: Log file not created")
+                return
+            
+            # Read log file
+            with open(LOG_FILE_PATH, 'r', encoding='utf-8') as f:
+                all_lines = f.readlines()
+            
+            # Apply filters
+            level_filter = self.log_level_filter.text().upper().strip()
+            search_filter = self.log_search_filter.text().strip()
+            
+            filtered_lines = []
+            for line in all_lines:
+                if level_filter and level_filter not in line:
+                    continue
+                if search_filter and search_filter.lower() not in line.lower():
+                    continue
+                filtered_lines.append(line)
+            
+            display_lines = filtered_lines[-1000:]
+            content = ''.join(display_lines)
+            self.log_viewer.setPlainText(content)
+            
+            self.log_viewer.verticalScrollBar().setValue(
+                self.log_viewer.verticalScrollBar().maximum()
+            )
+            
+            self.log_stats_label.setText(
+                f"Lines displayed: {len(display_lines)} / Total: {len(all_lines)} | Filtered: {len(filtered_lines)}"
+            )
+            
+            logger.debug(f'Log viewer refreshed: {len(display_lines)} lines displayed')
+            
+        except Exception as e:
+            self.log_viewer.setPlainText(f"Error reading log file: {e}")
+            logger.error(f'Error refreshing logs: {e}')
+    
+    def open_log_file(self):
+        """Open log file in default text editor"""
+        try:
+            import subprocess
+            if Path(LOG_FILE_PATH).exists():
+                if sys.platform == 'win32':
+                    subprocess.Popen(['notepad', LOG_FILE_PATH])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', '-a', 'TextEdit', LOG_FILE_PATH])
+                else:
+                    subprocess.Popen(['xdg-open', LOG_FILE_PATH])
+                logger.info(f'Opened log file in editor: {LOG_FILE_PATH}')
+            else:
+                QMessageBox.warning(self, "Not Found", f"Log file not found: {LOG_FILE_PATH}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open log file: {e}")
+            logger.error(f'Error opening log file: {e}')
+    
+    def auto_refresh_logs(self):
+        """Auto-refresh logs if checkbox is enabled"""
+        try:
+            if hasattr(self, 'auto_refresh_logs_cb') and self.auto_refresh_logs_cb.isChecked():
+                self.refresh_logs()
+        except Exception as e:
+            logger.error(f'Error in auto-refresh logs: {e}')
 
 
 

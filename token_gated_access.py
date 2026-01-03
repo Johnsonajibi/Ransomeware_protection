@@ -17,6 +17,13 @@ from typing import Optional, List, Dict
 import ctypes
 from ctypes import wintypes
 
+# Backup integration
+try:
+    from backup_integration import BackupIntegration
+    HAS_BACKUP = True
+except ImportError:
+    HAS_BACKUP = False
+
 # Import tri-factor authentication
 try:
     from trifactor_auth_manager import TriFactorAuthManager, SecurityLevel
@@ -56,6 +63,7 @@ class TokenGatedAccessControl:
         self.auth_manager = None
         self.health_checker = None
         self.logger = None
+        self.backup = BackupIntegration() if HAS_BACKUP else None
         
         # Load saved protected paths
         self._load_protected_paths()
@@ -272,6 +280,15 @@ class TokenGatedAccessControl:
             
             return False
         
+        # STEP 2b: Create safety backup before unblocking
+        backup_path = None
+        if self.backup:
+            backup_path = self.backup.backup_before_access(path_str)
+            if backup_path:
+                print(f"💾 Backup created: {backup_path}")
+            else:
+                print("⚠️ Backup could not be created (continuing)")
+
         # STEP 3: Remove access restrictions
         if requirements['is_directory']:
             success = self._unblock_folder_access(path_str)

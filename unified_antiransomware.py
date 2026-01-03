@@ -104,6 +104,50 @@ class WindowsSecurityAPI:
             print(f"⚠️ secure_unhide_file error: {e}")
             return False
 
+    def get_hardware_fingerprint_via_api(self):
+        """Get hardware fingerprint using Windows API - NO COMMAND INJECTION"""
+        try:
+            import winreg
+            
+            fingerprint_data = []
+            
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                  r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+                    cpu_id = winreg.QueryValueEx(key, "Identifier")[0]
+                    fingerprint_data.append(f"CPU:{cpu_id}")
+            except:
+                pass
+            
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                  r"SOFTWARE\Microsoft\Cryptography") as key:
+                    machine_guid = winreg.QueryValueEx(key, "MachineGuid")[0]
+                    fingerprint_data.append(f"GUID:{machine_guid}")
+            except:
+                pass
+            
+            try:
+                import wmi
+                c = wmi.WMI()
+                for system in c.Win32_ComputerSystem():
+                    if system.Name:
+                        fingerprint_data.append(f"SYS:{system.Name}")
+                    break
+            except ImportError:
+                computer_name = os.environ.get('COMPUTERNAME', 'unknown')
+                fingerprint_data.append(f"ENV:{computer_name}")
+            except:
+                pass
+            
+            combined = "|".join(fingerprint_data)
+            return hashlib.sha256(combined.encode()).hexdigest()
+            
+        except Exception as e:
+            print(f"Hardware fingerprint API error: {e}")
+            fallback = f"{platform.node()}-{platform.machine()}-{os.environ.get('USERNAME', 'user')}"
+            return hashlib.sha256(fallback.encode()).hexdigest()
+
 class SIEMClient:
     """Robust SIEM emitter with retry/backoff and optional HMAC signing.
 
@@ -162,50 +206,6 @@ class SIEMClient:
                 if attempt == 2:
                     print(f"⚠️ SIEM send failed after retries: {e}")
             time.sleep(1.5 * (attempt + 1))
-    
-    def get_hardware_fingerprint_via_api(self):
-        """Get hardware fingerprint using Windows API - NO COMMAND INJECTION"""
-        try:
-            import winreg
-            
-            fingerprint_data = []
-            
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                  r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
-                    cpu_id = winreg.QueryValueEx(key, "Identifier")[0]
-                    fingerprint_data.append(f"CPU:{cpu_id}")
-            except:
-                pass
-            
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                  r"SOFTWARE\Microsoft\Cryptography") as key:
-                    machine_guid = winreg.QueryValueEx(key, "MachineGuid")[0]
-                    fingerprint_data.append(f"GUID:{machine_guid}")
-            except:
-                pass
-            
-            try:
-                import wmi
-                c = wmi.WMI()
-                for system in c.Win32_ComputerSystem():
-                    if system.Name:
-                        fingerprint_data.append(f"SYS:{system.Name}")
-                    break
-            except ImportError:
-                computer_name = os.environ.get('COMPUTERNAME', 'unknown')
-                fingerprint_data.append(f"ENV:{computer_name}")
-            except:
-                pass
-            
-            combined = "|".join(fingerprint_data)
-            return hashlib.sha256(combined.encode()).hexdigest()
-            
-        except Exception as e:
-            print(f"Hardware fingerprint API error: {e}")
-            fallback = f"{platform.node()}-{platform.machine()}-{os.environ.get('USERNAME', 'user')}"
-            return hashlib.sha256(fallback.encode()).hexdigest()
 
 class SecureSubprocess:
     """LEGACY SECURE SUBPROCESS - DEPRECATED IN FAVOR OF WindowsSecurityAPI"""
@@ -739,35 +739,50 @@ def _get_secure_app_dir():
     import sqlite3
     import tempfile
     
-    # Try ProgramData first (requires admin)
+    # Prefer per-user LocalAppData to avoid Controlled Folder Access blocks
     try:
-        program_data = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData'))
-        app_dir = program_data / "AntiRansomware"
-        app_dir.mkdir(parents=True, exist_ok=True)
-        
+        user_dir = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local')) / "AntiRansomware"
+        user_dir.mkdir(parents=True, exist_ok=True)
+
         # Test SQLite access with a temporary database
-        test_db = app_dir / "test.db"
+        test_db = user_dir / "test.db"
         conn = sqlite3.connect(str(test_db))
         conn.execute("CREATE TABLE test (id INTEGER)")
         conn.close()
         test_db.unlink()  # Clean up test file
-        
-        # Avoid unicode print in packaged app
-        try:
-            print(f"Using system directory: {app_dir}")
-        except:
-            pass
-        return app_dir
-    except (PermissionError, sqlite3.OperationalError, OSError):
-        # Fallback to user directory if no proper access
-        user_dir = Path(os.path.expanduser("~")) / "AppData" / "Local" / "UnifiedAntiRansomware"
-        user_dir.mkdir(parents=True, exist_ok=True)
-        # Avoid unicode print in packaged app
+
         try:
             print(f"Using user directory: {user_dir}")
         except:
             pass
         return user_dir
+    except (PermissionError, sqlite3.OperationalError, OSError):
+        # Fallback to ProgramData if user dir is blocked
+        try:
+            program_data = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData'))
+            app_dir = program_data / "AntiRansomware"
+            app_dir.mkdir(parents=True, exist_ok=True)
+
+            test_db = app_dir / "test.db"
+            conn = sqlite3.connect(str(test_db))
+            conn.execute("CREATE TABLE test (id INTEGER)")
+            conn.close()
+            test_db.unlink()
+
+            try:
+                print(f"Using system directory: {app_dir}")
+            except:
+                pass
+            return app_dir
+        except (PermissionError, sqlite3.OperationalError, OSError):
+            # Final fallback to temp dir
+            temp_dir = Path(tempfile.gettempdir()) / "AntiRansomware"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                print(f"Using temp directory: {temp_dir}")
+            except:
+                pass
+            return temp_dir
 
 APP_DIR = _get_secure_app_dir()
 DB_PATH = APP_DIR / "protection.db"
@@ -798,12 +813,7 @@ def _secure_database_acls():
         success = _set_acls_via_windows_api(str(APP_DIR))
         
         if not success:
-            print("⚠️ WARNING: Falling back to subprocess calls")
-            print("⚠️ SECURITY RISK: Command injection surface remains")
-            
-            # SAFER APPROACH: Use Windows API calls instead of subprocess
-            print("⚠️ Using safer Windows API approach for ACL configuration")
-            
+            # Fallback to Windows API for ACL configuration
             try:
                 # Use Windows API for ACL configuration
                 import win32security
@@ -828,8 +838,6 @@ def _secure_database_acls():
                 sd.SetSecurityDescriptorDacl(1, dacl, 0)
                 win32security.SetFileSecurity(str(APP_DIR), win32security.DACL_SECURITY_INFORMATION, sd)
                 
-                print("✅ Windows API ACL configuration successful")
-                
             except ImportError:
                 print("⚠️ pywin32 not available - using basic folder permissions")
                 # Fallback: Just ensure the directory exists with proper basic permissions
@@ -842,8 +850,6 @@ def _secure_database_acls():
         
         # Enable Windows Controlled Folder Access
         _enable_controlled_folder_access(str(APP_DIR))
-        
-        print(f"✅ ACLs applied to: {APP_DIR} (with acknowledged limitations)")
         
     except Exception as e:
         print(f"⚠️ ACL application failed: {e}")
@@ -859,7 +865,6 @@ def _set_acls_via_windows_api(directory_path):
         # extensive ctypes wrapper development
         
         # For now, return False to indicate fallback needed
-        print("⚠️ Full Windows API ACL implementation pending")
         return False
         
     except Exception as e:
@@ -869,6 +874,11 @@ def _set_acls_via_windows_api(directory_path):
 def _enable_controlled_folder_access(protected_path):
     """Enable Windows Controlled Folder Access for enhanced protection"""
     try:
+        # CFA requires admin rights and Windows Defender - skip silently if unavailable
+        import ctypes
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            return
+            
         secure_proc = SecureSubprocess(timeout=30)
         
         # Enable Controlled Folder Access via PowerShell
@@ -880,13 +890,11 @@ def _enable_controlled_folder_access(protected_path):
         ]
         
         result = secure_proc.secure_run(ps_cmd)
-        if result.returncode == 0:
-            print(f"✅ Controlled Folder Access enabled for: {protected_path}")
-        else:
-            print(f"⚠️  Controlled Folder Access setup failed: {result.stderr}")
+        # Silently succeed or fail - CFA is optional enhancement
             
-    except Exception as e:
-        print(f"⚠️  Controlled Folder Access error: {e}")
+    except Exception:
+        # CFA is optional - don't show errors
+        pass
 
 # Apply ACLs on import if admin rights available
 def _try_secure_acls():
@@ -972,10 +980,33 @@ class UnifiedDatabase:
                     updated TEXT NOT NULL
                 )
             ''')
+
+            # Security events table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS security_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    file_path TEXT,
+                    process_name TEXT,
+                    process_id INTEGER,
+                    action_taken TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    details TEXT,
+                    username TEXT
+                )
+            ''')
+
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_security_events_timestamp ON security_events(timestamp DESC)'
+            )
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity)'
+            )
             
             conn.commit()
             conn.close()
-            print("✅ Unified database initialized successfully")
+            # Database initialized
         except Exception as e:
             print(f"❌ Database error: {e}")
     
@@ -1008,11 +1039,19 @@ class UnifiedDatabase:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # Check if bound_token_id column exists
+            # Check if columns exist and add if missing
             cursor.execute("PRAGMA table_info(protected_folders)")
             columns = [column[1] for column in cursor.fetchall()]
             
             # Add missing columns
+            if 'file_count' not in columns:
+                cursor.execute('ALTER TABLE protected_folders ADD COLUMN file_count INTEGER DEFAULT 0')
+                print("📦 Added file_count column to database")
+            
+            if 'protection_level' not in columns:
+                cursor.execute('ALTER TABLE protected_folders ADD COLUMN protection_level TEXT DEFAULT "MAXIMUM"')
+                print("📦 Added protection_level column to database")
+            
             if 'bound_token_id' not in columns:
                 cursor.execute('ALTER TABLE protected_folders ADD COLUMN bound_token_id TEXT')
                 print("📦 Added bound_token_id column to database")
@@ -1107,18 +1146,74 @@ class UnifiedDatabase:
             return []
     
     def remove_protected_folder(self, path):
-        """Remove folder from protection"""
+        """Remove folder from protection AND restore file access"""
         conn = None
         try:
+            print(f"🔓 Removing protection and restoring access for: {path}")
+            
+            # Step 1: Restore file access (remove ACLs, unhide, etc)
+            folder = Path(path)
+            if folder.exists():
+                # Import required modules
+                try:
+                    import win32security
+                    import ntsecuritycon as con
+                    import win32api
+                    import win32con
+                    
+                    # Restore normal access to all files in the folder
+                    for file_path in folder.rglob('*'):
+                        if file_path.is_file():
+                            try:
+                                # Get current security descriptor
+                                sd = win32security.GetFileSecurity(
+                                    str(file_path),
+                                    win32security.DACL_SECURITY_INFORMATION
+                                )
+                                
+                                # Create a new DACL with full access for Everyone
+                                dacl = win32security.ACL()
+                                everyone_sid = win32security.ConvertStringSidToSid("S-1-1-0")  # Everyone
+                                dacl.AddAccessAllowedAce(win32security.ACL_REVISION, con.FILE_ALL_ACCESS, everyone_sid)
+                                
+                                # Apply the new DACL
+                                sd.SetSecurityDescriptorDacl(1, dacl, 0)
+                                win32security.SetFileSecurity(str(file_path), win32security.DACL_SECURITY_INFORMATION, sd)
+                                
+                                # Remove read-only and hidden attributes
+                                win32api.SetFileAttributes(
+                                    str(file_path),
+                                    win32con.FILE_ATTRIBUTE_NORMAL
+                                )
+                                
+                            except Exception as e:
+                                print(f"⚠️ Could not restore access to {file_path.name}: {e}")
+                    
+                    # Restore folder attributes
+                    try:
+                        win32api.SetFileAttributes(
+                            str(folder),
+                            win32con.FILE_ATTRIBUTE_NORMAL
+                        )
+                    except:
+                        pass
+                        
+                except ImportError:
+                    print("⚠️ pywin32 not available - ACL restoration skipped")
+                except Exception as e:
+                    print(f"⚠️ Error restoring file access: {e}")
+            
+            # Step 2: Remove from database
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            # Delete instead of setting active=0 so it actually removes
             cursor.execute('DELETE FROM protected_folders WHERE path = ?', (path,))
             conn.commit()
             conn.close()
+            
             self.log_activity("FOLDER_UNPROTECTED", path)
-            print(f"✅ Removed protection from: {path}")
+            print(f"✅ Removed protection and restored access: {path}")
             return True
+            
         except Exception as e:
             print(f"❌ Error removing folder: {e}")
             if conn:
@@ -1150,42 +1245,83 @@ class UnifiedDatabase:
             })
         return results
 
-    def log_event(self, event_type, file_path, process_name, details):
-        """Compatibility wrapper to log events to activity_log."""
+    def log_event(self, event_type, file_path, process_name=None, details="", action_taken=None,
+                  severity="INFO", process_id=None, username=None):
+        """Log security event into security_events (falls back to activity_log)."""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
+            ts = datetime.now().isoformat()
+            act = action_taken or "ACTION_RECORDED"
+            user = username
+            if not user:
+                try:
+                    import getpass
+                    user = getpass.getuser()
+                except Exception:
+                    user = None
+
             cursor.execute(
-                '''INSERT INTO activity_log (timestamp, action, target_path, details, success)
-                   VALUES (?, ?, ?, ?, 1)''',
-                (datetime.now().isoformat(), event_type, file_path or '', f"{process_name}: {details}")
+                '''INSERT INTO security_events
+                   (timestamp, event_type, file_path, process_name, process_id, action_taken, severity, details, username)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (ts, event_type, file_path or '', process_name or '', process_id, act, severity, details, user)
             )
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"⚠️ Log event error: {e}")
+            # Fallback to legacy activity_log if security_events missing
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT INTO activity_log (timestamp, action, target_path, details, success)
+                       VALUES (?, ?, ?, ?, 1)''',
+                    (datetime.now().isoformat(), event_type, file_path or '', f"{process_name}: {details}")
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                print(f"⚠️ Log event error: {e}")
 
     def get_events(self, limit=100):
         """Return recent events for the UI."""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT timestamp, action, target_path, details, success
-                   FROM activity_log
-                   ORDER BY id DESC
-                   LIMIT ?''', (limit,)
-            )
-            rows = cursor.fetchall()
+            try:
+                cursor.execute(
+                    '''SELECT timestamp, event_type, file_path, process_name, action_taken, severity, process_id, details
+                       FROM security_events
+                       ORDER BY id DESC
+                       LIMIT ?''', (limit,)
+                )
+                rows = cursor.fetchall()
+            except Exception:
+                cursor.execute(
+                    '''SELECT timestamp, action, target_path, details, success
+                       FROM activity_log
+                       ORDER BY id DESC
+                       LIMIT ?''', (limit,)
+                )
+                rows = [
+                    (ts, action, target, details, 'blocked' if not success else action, 'INFO', None, details)
+                    for ts, action, target, details, success in cursor.fetchall()
+                ]
+
             conn.close()
             events = []
-            for ts, action, target, details, success in rows:
+            for row in rows:
+                ts, evt_type, path, proc_name, action_taken, severity, pid, details = row
                 events.append({
                     'timestamp': ts,
-                    'event_type': action,
-                    'file_path': target,
-                    'process_name': details or '',
-                    'action': 'blocked' if not success else action
+                    'event_type': evt_type,
+                    'file_path': path,
+                    'process_name': proc_name or '',
+                    'action': action_taken,
+                    'severity': severity,
+                    'process_id': pid,
+                    'details': details or ''
                 })
             return events
         except Exception as e:
@@ -1197,7 +1333,10 @@ class UnifiedDatabase:
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM activity_log')
+            try:
+                cursor.execute('DELETE FROM security_events')
+            except Exception:
+                cursor.execute('DELETE FROM activity_log')
             conn.commit()
             conn.close()
             return True
@@ -1422,41 +1561,75 @@ class SecureUSBTokenManager:
                     print("❌ Enterprise token validation FAILED")
                     return False
             
-            # Legacy validation
+            # Read token data
             with open(token_path, 'rb') as f:
                 encrypted_data = f.read()
+            
+            # Try to detect token format
+            try:
+                # Check if it's JSON (v3.0 authenticated format)
+                token_structure = json.loads(encrypted_data.decode())
+                if token_structure.get("version") == "3.0_authenticated":
+                    # Use authenticated decryption for v3.0 tokens
+                    decrypted_json = self._decrypt_token_authenticated(encrypted_data)
+                    token_data = json.loads(decrypted_json)
+                    
+                    # Validate v3.0 token
+                    if token_data.get("hardware_fingerprint") != self.hardware_fingerprint:
+                        return False
+                    
+                    # Check expiration
+                    current_time = int(time.time())
+                    expiration = token_data.get("expiration", 0)
+                    if current_time > expiration:
+                        return False
+                    
+                    return True
+                    
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                # Not JSON, try legacy binary format
+                pass
+            
+            # Legacy binary format validation
+            try:
+                decrypted_json = self._decrypt_token(encrypted_data)
+                signed_token = json.loads(decrypted_json)
                 
-            decrypted_json = self._decrypt_token(encrypted_data)
-            signed_token = json.loads(decrypted_json)
-            
-            # Verify signature
-            token_data = signed_token["data"]
-            provided_signature = signed_token["signature"]
-            
-            token_json = json.dumps(token_data, sort_keys=True)
-            expected_signature = hmac.new(
-                self.hardware_fingerprint.encode(),
-                token_json.encode(),
-                hashlib.sha256
-            ).hexdigest()
-            
-            if not hmac.compare_digest(provided_signature, expected_signature):
+                # Verify signature
+                token_data = signed_token["data"]
+                provided_signature = signed_token["signature"]
+                
+                token_json = json.dumps(token_data, sort_keys=True)
+                expected_signature = hmac.new(
+                    self.hardware_fingerprint.encode(),
+                    token_json.encode(),
+                    hashlib.sha256
+                ).hexdigest()
+                
+                if not hmac.compare_digest(provided_signature, expected_signature):
+                    return False
+                    
+                # Verify hardware fingerprint
+                if token_data["hardware_fingerprint"] != self.hardware_fingerprint:
+                    return False
+                    
+                # Check token age (24 hours)
+                age = int(time.time()) - token_data["timestamp"]
+                if age > 86400:
+                    return False
+                    
+                return True
+            except:
+                # Legacy format also failed
                 return False
-                
-            # Verify hardware fingerprint
-            if token_data["hardware_fingerprint"] != self.hardware_fingerprint:
-                return False
-                
-            # Check token age (24 hours)
-            age = int(time.time()) - token_data["timestamp"]
-            if age > 86400:
-                return False
-                
-            return True
             
+        except ValueError as e:
+            # Silently reject corrupted/incompatible tokens (likely legacy format)
+            if "block-aligned" in str(e) or "too short" in str(e) or "padding" in str(e):
+                return False
+            return False
         except Exception as e:
-            print(f"❌ Token validation error: {e}")
-            traceback.print_exc()
+            # Silently fail for any other errors (avoid spam)
             return False
     
     def get_usb_drives(self):
@@ -1496,6 +1669,10 @@ class SecureUSBTokenManager:
             
     def _encrypt_token(self, data):
         """Encrypt token data with secure random salt"""
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        
         # Generate secure random salt for this operation
         salt = secrets.token_bytes(32)  # 256-bit secure random salt
         
@@ -1526,10 +1703,22 @@ class SecureUSBTokenManager:
         
     def _decrypt_token(self, encrypted_data):
         """Decrypt token data with secure salt handling"""
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        
+        # Validate minimum size (salt + iv + at least 1 block)
+        if len(encrypted_data) < 48 + 16:
+            raise ValueError("Invalid token data: too short")
+        
         # Extract salt, IV and ciphertext
         salt = encrypted_data[:32]  # First 32 bytes are salt
         iv = encrypted_data[32:48]  # Next 16 bytes are IV
         ciphertext = encrypted_data[48:]  # Remaining bytes are ciphertext
+        
+        # Validate ciphertext is block-aligned
+        if len(ciphertext) % 16 != 0:
+            raise ValueError("Invalid token data: not block-aligned")
         
         # Derive key using the stored salt
         kdf = PBKDF2HMAC(
@@ -1547,6 +1736,8 @@ class SecureUSBTokenManager:
         
         # Remove padding
         pad_length = padded_data[-1]
+        if pad_length > 16 or pad_length < 1:
+            raise ValueError("Invalid padding")
         data = padded_data[:-pad_length]
         
         return data.decode()
@@ -2794,8 +2985,10 @@ class CryptographicProtection:
                 success = self.enterprise_manager.encrypt_file_quantum(str(file_path))
                 
                 if success:
-                    # Hide using secure Windows API
-                    self.api.secure_hide_file(str(file_path))
+                    # Only hide if explicitly configured
+                    hide_protected_files = os.getenv('HIDE_PROTECTED_FILES', '').lower() in ('1', 'true', 'yes')
+                    if hide_protected_files:
+                        self.api.secure_hide_file(str(file_path))
                     print(f"✅ Quantum-resistant encryption complete: {os.path.basename(file_path)}")
                     # Return encrypted bytes for caller to write elsewhere if needed
                     with open(file_path, 'rb') as f:
@@ -2830,7 +3023,10 @@ class CryptographicProtection:
             with open(file_path, 'wb') as f:
                 f.write(encrypted_bytes)
             
-            self.api.secure_hide_file(str(file_path))
+            # Only hide if explicitly configured
+            hide_protected_files = os.getenv('HIDE_PROTECTED_FILES', '').lower() in ('1', 'true', 'yes')
+            if hide_protected_files:
+                self.api.secure_hide_file(str(file_path))
             
             print(f"🔐 File encrypted: {os.path.basename(file_path)}")
             return encrypted_bytes
@@ -3129,11 +3325,8 @@ class FileAccessControl:
 
         except Exception as e:
             print(f"⚠️ Could not block external access for {Path(file_path).name}: {e}")
-            try:
-                self.api.secure_hide_file(str(file_path))
-                return True
-            except Exception:
-                return False
+            # Don't hide as fallback - respect user preference
+            return False
     
     def allow_temporary_access(self, file_path, sid_str: str = None, ttl_seconds: int = None):
         """Grant a time-limited lease by adding an ALLOW ACE for the caller SID."""
@@ -3387,11 +3580,16 @@ class UnbreakableFileManager:
             
             # Phase 2: Apply folder-level protection using Windows API (NO subprocess vulnerabilities)
             print("🔒 Phase 2: Applying folder-level protection...")
-            api = WindowsSecurityAPI()
-            if api.secure_hide_file(str(folder)):
-                print("🔒 Folder-level protection applied")
+            # Only hide folders if explicitly configured (default: keep visible)
+            hide_protected_files = os.getenv('HIDE_PROTECTED_FILES', '').lower() in ('1', 'true', 'yes')
+            if hide_protected_files:
+                api = WindowsSecurityAPI()
+                if api.secure_hide_file(str(folder)):
+                    print("🔒 Folder hidden for stealth protection")
+                else:
+                    print("⚠️ Folder hiding warning")
             else:
-                print("⚠️ Folder-level protection warning")
+                print("🔒 Folder-level protection: Visible (set HIDE_PROTECTED_FILES=1 to hide)")
             
             # Phase 3: Apply admin-proof protection only when encryption is active
             print("🔒 Phase 3: Applying admin-proof protection...")
@@ -3619,6 +3817,18 @@ class UnifiedProtectionManager:
         self.registry_protection = RegistryProtection()
         self.filesystem_protection = EnhancedFileSystemProtection()
         self._containment_active = False
+        
+        # Initialize real-time file blocker
+        try:
+            from realtime_file_blocker import RealtimeFileBlocker
+            self.file_blocker = RealtimeFileBlocker(
+                self.token_manager,
+                self.file_manager.access_control,
+                event_logger=self.database.log_event
+            )
+        except ImportError:
+            print("⚠️ Real-time file blocker not available")
+            self.file_blocker = None
 
         # Initialize SIEM client and bind to database logger
         try:
@@ -4030,12 +4240,7 @@ class UnifiedProtectionManager:
             
         except Exception as e:
             print(f"❌ File addition error: {e}")
-            # Try to re-protect folder even on error using Windows API
-            try:
-                api = WindowsSecurityAPI()
-                api.secure_hide_file(folder_path)
-            except:
-                pass
+            # Don't hide folder on error - respect user preference
             return False
     
     def _handle_kernel_event(self, event_type, data):
@@ -6187,11 +6392,29 @@ Write-Host "Installation completed successfully!" -ForegroundColor Green
     
     def _get_security_events(self):
         """Get security events for audit"""
-        return {
-            'blocked_attacks': 5,
-            'suspicious_activity': 2,
-            'successful_authentications': 150
-        }
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT
+                       SUM(CASE WHEN action_taken LIKE '%BLOCK%' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN severity IN ('CRITICAL','HIGH') THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN event_type LIKE '%AUTH%' THEN 1 ELSE 0 END)
+                   FROM security_events'''
+            )
+            row = cursor.fetchone() or (0, 0, 0)
+            conn.close()
+            return {
+                'blocked_attacks': row[0] or 0,
+                'suspicious_activity': row[1] or 0,
+                'successful_authentications': row[2] or 0
+            }
+        except Exception:
+            return {
+                'blocked_attacks': 0,
+                'suspicious_activity': 0,
+                'successful_authentications': 0
+            }
     
     def _check_compliance(self):
         """Check compliance status"""

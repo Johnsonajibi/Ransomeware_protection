@@ -12,6 +12,12 @@ import argparse
 from typing import Optional
 
 try:
+    from emergency_kill_switch import EmergencyKillSwitch
+    HAS_KILL_SWITCH = True
+except ImportError:
+    HAS_KILL_SWITCH = False
+
+try:
     import yaml
     HAS_YAML = True
 except ImportError:
@@ -25,6 +31,20 @@ from quarantine_manager import QuarantineManager
 from threat_intelligence import ThreatIntelligence
 from recovery import RecoveryManager
 from forensics import ForensicsManager
+from integrity_monitor import IntegrityMonitor
+from honeypot_monitor import HoneypotMonitor
+
+try:
+    from email_alerting import EmailAlertingSystem
+    HAS_EMAIL = True
+except ImportError:
+    HAS_EMAIL = False
+
+try:
+    from siem_integration import SIEMIntegration
+    HAS_SIEM = True
+except ImportError:
+    HAS_SIEM = False
 
 # Advanced features
 try:
@@ -72,6 +92,11 @@ class AntiRansomwareManager:
         self.process_monitor: Optional[ProcessMonitor] = None
         self.recovery_manager: Optional[RecoveryManager] = None
         self.forensics: Optional[ForensicsManager] = None
+        self.integrity_monitor: Optional[IntegrityMonitor] = None
+        self.kill_switch: Optional['EmergencyKillSwitch'] = None
+        self.honeypot_monitor: Optional[HoneypotMonitor] = None
+        self.email_alerter: Optional['EmailAlertingSystem'] = None
+        self.siem: Optional['SIEMIntegration'] = None
         
         # Advanced features
         self.ml_detector: Optional['MLRansomwareDetector'] = None
@@ -114,6 +139,24 @@ class AntiRansomwareManager:
                 'directory': 'C:\\ProgramData\\AntiRansomware\\quarantine',
                 'auto_quarantine_threshold': 80
             },
+            'integrity_monitor': {
+                'enable': False,
+                'paths': []
+            },
+            'honeypots': {
+                'enable': False,
+                'directories': []
+            },
+            'kill_switch': {
+                'enable': False,
+                'score_threshold': 95
+            },
+            'email_alerts': {
+                'enable': False
+            },
+            'siem': {
+                'enable': False
+            },
             'logging': {
                 'level': 'INFO',
                 'file': 'C:\\ProgramData\\AntiRansomware\\logs\\antiransomware.log'
@@ -125,14 +168,20 @@ class AntiRansomwareManager:
         try:
             logger.info("Initializing Anti-Ransomware components...")
             
-            # Create directories
-            for dir_path in [
-                'C:\\ProgramData\\AntiRansomware\\quarantine',
-                'C:\\ProgramData\\AntiRansomware\\backups',
-                'C:\\ProgramData\\AntiRansomware\\forensics',
-                'C:\\ProgramData\\AntiRansomware\\logs'
-            ]:
-                os.makedirs(dir_path, exist_ok=True)
+            # Create required directories from config (fallback to local data paths)
+            quarantine_dir_cfg = self.config.get('quarantine', {}).get('directory', './data/quarantine')
+            backup_dir_cfg = self.config.get('backup', {}).get('backup_directory', './data/backups')
+            forensics_dir_cfg = self.config.get('forensics', {}).get('storage_directory', './data/forensics')
+            logs_dir_cfg = self.config.get('logging', {}).get('log_directory', './data/logs')
+
+            for dir_path in [quarantine_dir_cfg, backup_dir_cfg, forensics_dir_cfg, logs_dir_cfg]:
+                try:
+                    os.makedirs(dir_path, exist_ok=True)
+                except FileExistsError:
+                    # If a file exists at the path, skip to avoid crashing initialization
+                    logger.warning(f"Directory path already occupied by a file: {dir_path}")
+                except PermissionError:
+                    logger.error(f"Permission denied creating directory: {dir_path}")
             
             # Initialize threat intelligence
             self.threat_intel = ThreatIntelligence()
@@ -143,18 +192,52 @@ class AntiRansomwareManager:
             logger.info("✓ Detection Engine initialized")
             
             # Initialize quarantine manager
-            quarantine_dir = self.config.get('quarantine', {}).get('directory',
-                                                                   'C:\\ProgramData\\AntiRansomware\\quarantine')
-            self.quarantine_manager = QuarantineManager(quarantine_dir)
+            self.quarantine_manager = QuarantineManager(quarantine_dir_cfg)
             logger.info("✓ Quarantine Manager initialized")
             
             # Initialize recovery manager
-            self.recovery_manager = RecoveryManager()
+            self.recovery_manager = RecoveryManager(backup_dir=backup_dir_cfg)
             logger.info("✓ Recovery Manager initialized")
             
             # Initialize forensics
-            self.forensics = ForensicsManager()
+            self.forensics = ForensicsManager(forensics_dir=forensics_dir_cfg)
             logger.info("✓ Forensics Manager initialized")
+
+            # Kill switch
+            if HAS_KILL_SWITCH:
+                try:
+                    self.kill_switch = EmergencyKillSwitch()
+                    logger.info("✓ Emergency Kill Switch ready")
+                except Exception as e:
+                    logger.warning(f"Kill switch init failed: {e}")
+
+            # Initialize integrity monitor (optional)
+            fim_cfg = self.config.get('integrity_monitor', {})
+            if fim_cfg.get('enable'):
+                self.integrity_monitor = IntegrityMonitor()
+                paths = fim_cfg.get('paths') or []
+                if paths:
+                    self.integrity_monitor.create_baseline(paths)
+                    if self.integrity_monitor.start(paths):
+                        logger.info(f"✓ Integrity Monitor started for {len(paths)} path(s)")
+                    else:
+                        logger.warning("Integrity Monitor not started (watchdog missing)")
+                else:
+                    logger.warning("Integrity Monitor enabled but no paths configured")
+            
+            # Initialize honeypot monitor (optional)
+            hp_cfg = self.config.get('honeypots', {})
+            if hp_cfg.get('enable'):
+                self.honeypot_monitor = HoneypotMonitor()
+                dirs = hp_cfg.get('directories') or []
+                if dirs:
+                    self.honeypot_monitor.create_honeypots(dirs)
+                    if self.honeypot_monitor.start():
+                        logger.info(f"✓ Honeypot Monitor started for {len(dirs)} dir(s)")
+                    else:
+                        logger.warning("Honeypot Monitor not started (watchdog missing)")
+                else:
+                    logger.warning("Honeypot Monitor enabled but no directories configured")
             
             # Initialize ML detector if available
             if HAS_ML:
@@ -182,6 +265,22 @@ class AntiRansomwareManager:
                         logger.warning("TPM not available on this system")
                 except Exception as e:
                     logger.warning(f"TPM initialization failed: {e}")
+            
+            # Email alerting (optional)
+            if HAS_EMAIL and self.config.get('email_alerts', {}).get('enable'):
+                try:
+                    self.email_alerter = EmailAlertingSystem()
+                    logger.info("✓ Email Alerting initialized")
+                except Exception as e:
+                    logger.warning(f"Email alerting init failed: {e}")
+            
+            # SIEM integration (optional)
+            if HAS_SIEM and self.config.get('siem', {}).get('enable'):
+                try:
+                    self.siem = SIEMIntegration()
+                    logger.info("✓ SIEM Integration initialized")
+                except Exception as e:
+                    logger.warning(f"SIEM init failed: {e}")
             
             # Set up threat callback
             def threat_callback(threat_score):
@@ -212,7 +311,7 @@ class AntiRansomwareManager:
                     except Exception as e:
                         logger.error(f"ML detection error: {e}")
                 
-                # Record forensic event
+                # Collect forensic event
                 details = f"Score: {threat_score.total_score}"
                 if ml_is_malware:
                     details += f", ML: {ml_confidence:.1%}"
@@ -224,6 +323,40 @@ class AntiRansomwareManager:
                     file_path=threat_score.file_path,
                     details=details
                 )
+                
+                # Send SIEM event
+                if self.siem:
+                    try:
+                        self.siem.send_event(
+                            event_type="ransomware_threat",
+                            severity=threat_score.risk_level,
+                            details={
+                                'file': threat_score.file_path,
+                                'process_id': threat_score.process_id,
+                                'score': threat_score.total_score,
+                                'reasons': threat_score.reasons
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"SIEM send failed: {e}")
+                
+                # Send email alert
+                if self.email_alerter:
+                    try:
+                        if threat_score.total_score >= 70:  # Send email for high scores
+                            self.email_alerter.send_alert(
+                                alert_type='THREAT_DETECTED',
+                                severity=threat_score.risk_level,
+                                details={
+                                    'file': threat_score.file_path,
+                                    'process_id': threat_score.process_id,
+                                    'score': threat_score.total_score,
+                                    'reasons': threat_score.reasons
+                                },
+                                attach_logs=True
+                            )
+                    except Exception as e:
+                        logger.error(f"Email alert failed: {e}")
                 
                 # Auto-quarantine if critical
                 auto_threshold = self.config.get('quarantine', {}).get('auto_quarantine_threshold', 80)
@@ -246,15 +379,31 @@ class AntiRansomwareManager:
                         
                         # Collect evidence
                         self.forensics.collect_file_evidence(threat_score.file_path, event_id)
+
+                # Kill switch trigger for extreme scenarios
+                kill_cfg = self.config.get('kill_switch', {})
+                kill_enabled = kill_cfg.get('enable', False)
+                kill_threshold = kill_cfg.get('score_threshold', 95)
+                if kill_enabled and HAS_KILL_SWITCH and self.kill_switch:
+                    if threat_score.total_score >= kill_threshold:
+                        try:
+                            reason = f"CRITICAL_THREAT_SCORE_{threat_score.total_score}"
+                            self.kill_switch.activate_lockdown(reason=reason, triggered_by='DetectionPipeline')
+                            logger.critical("EMERGENCY KILL SWITCH ACTIVATED")
+                        except Exception as e:
+                            logger.error(f"Kill switch activation failed: {e}")
                 
                 # Collect process evidence
                 if threat_score.process_id:
                     self.forensics.collect_process_evidence(threat_score.process_id, event_id)
             
             # Initialize file monitor
+            watch_paths = self.config.get('file_monitor', {}).get('watch_paths')
+            exclude_paths = self.config.get('file_monitor', {}).get('exclude_paths')
             self.file_monitor = FileMonitor(
-                detection_engine=self.detection_engine,
-                threat_callback=threat_callback
+                watch_paths=watch_paths,
+                exclude_paths=exclude_paths,
+                on_threat_detected=threat_callback
             )
             logger.info("✓ File Monitor initialized")
             
@@ -282,7 +431,7 @@ class AntiRansomwareManager:
                     self.stats['processes_blocked'] += 1
             
             # Initialize process monitor
-            self.process_monitor = ProcessMonitor(suspicious_callback=process_callback)
+            self.process_monitor = ProcessMonitor(on_suspicious_process=process_callback)
             logger.info("✓ Process Monitor initialized")
             
             logger.info("All components initialized successfully!")
@@ -343,6 +492,12 @@ class AntiRansomwareManager:
             
             if self.process_monitor:
                 self.process_monitor.stop()
+
+            if self.integrity_monitor:
+                self.integrity_monitor.stop()
+            
+            if self.honeypot_monitor:
+                self.honeypot_monitor.stop()
             
             # Print statistics
             uptime = time.time() - self.stats['start_time'] if self.stats['start_time'] else 0

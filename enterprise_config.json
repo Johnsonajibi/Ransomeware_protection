@@ -28,7 +28,7 @@
     "guardian_sid": null,
     "lease_ttl_seconds": 300,
     "apply_on_startup": false,
-    "gate_mode": "gate"  /* options: gate, encrypt_gate */
+    "gate_mode": "gate"
   },
   "alerting": {
     "email": {
