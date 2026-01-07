@@ -374,6 +374,17 @@ class SIEMIntegration:
             if use_tls:
                 context = ssl.create_default_context()
                 
+                # Enforce modern TLS versions (TLS 1.2+)
+                # Prefer minimum_version when available (Python 3.7+),
+                # otherwise fall back to disabling older protocol versions.
+                if hasattr(ssl, "TLSVersion"):
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
+                else:
+                    if hasattr(ssl, "OP_NO_TLSv1"):
+                        context.options |= ssl.OP_NO_TLSv1
+                    if hasattr(ssl, "OP_NO_TLSv1_1"):
+                        context.options |= ssl.OP_NO_TLSv1_1
+                
                 # Load CA cert if provided
                 if self.config['tls_ca_cert']:
                     context.load_verify_locations(self.config['tls_ca_cert'])
