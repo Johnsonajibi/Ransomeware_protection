@@ -372,7 +372,8 @@ class SIEMIntegration:
             
             # Wrap with TLS if needed
             if use_tls:
-                context = ssl.create_default_context()
+                # Create a client context and explicitly restrict to modern TLS
+                context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
                 
                 # Enforce modern TLS versions (TLS 1.2+)
                 # Prefer minimum_version when available (Python 3.7+),
