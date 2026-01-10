@@ -8,6 +8,11 @@ from flask import Flask, jsonify
 import os
 import time
 from pathlib import Path
+import logging
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -96,7 +101,8 @@ def test():
         return f'THREAT DETECTED AND BLOCKED! Moved to quarantine: {quarantine_file.name}'
         
     except Exception as e:
-        return f'Test failed: {str(e)}'
+        logger.error(f"Test failed: {e}")
+        return 'Test failed. Please check system configuration and try again.'
 
 @app.route('/stats')
 def get_stats():
