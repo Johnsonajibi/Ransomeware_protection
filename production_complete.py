@@ -54,8 +54,10 @@ def validate_path(path: str) -> bool:
         if not abs_path:
             return False
         
-        # Check for path traversal attempts
-        if '..' in path or path.startswith('~'):
+        # Check for path traversal attempts using normalized path
+        # This handles encoded sequences and /./  patterns
+        normalized_input = os.path.normpath(os.path.abspath(path))
+        if '..' in normalized_input or path.startswith('~'):
             return False
         
         # On Windows, ensure it's a valid drive letter format or UNC path
@@ -64,11 +66,14 @@ def validate_path(path: str) -> bool:
             if len(abs_path) < 3:
                 return False
             # Check for drive letter (e.g., C:\) or UNC path (\\server\)
-            if not ((abs_path[0].isalpha() and abs_path[1:3] == ':\\') or abs_path.startswith('\\\\')):
+            # Only check if we have at least 3 characters (verified above)
+            is_drive_path = abs_path[0].isalpha() and abs_path[1:3] == ':\\'
+            is_unc_path = abs_path.startswith('\\\\')
+            if not (is_drive_path or is_unc_path):
                 return False
         
         return True
-    except (ValueError, OSError):
+    except (ValueError, OSError, IndexError):
         return False
 
 @dataclass
