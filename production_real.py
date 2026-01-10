@@ -45,6 +45,10 @@ def validate_path(path: str) -> bool:
         # Resolve to absolute path and normalize
         abs_path = os.path.abspath(path)
         
+        # Check for empty path after normalization
+        if not abs_path:
+            return False
+        
         # Check for path traversal attempts
         if '..' in path or path.startswith('~'):
             return False
@@ -52,7 +56,10 @@ def validate_path(path: str) -> bool:
         # On Windows, ensure it's a valid drive letter format or UNC path
         if sys.platform == 'win32':
             # Valid Windows path should start with drive letter or UNC
-            if not (abs_path[0].isalpha() and abs_path[1:3] == ':\\') and not abs_path.startswith('\\\\'):
+            if len(abs_path) < 3:
+                return False
+            # Check for drive letter (e.g., C:\) or UNC path (\\server\)
+            if not ((abs_path[0].isalpha() and abs_path[1:3] == ':\\') or abs_path.startswith('\\\\')):
                 return False
         
         return True
