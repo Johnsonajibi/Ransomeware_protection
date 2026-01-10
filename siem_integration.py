@@ -375,12 +375,17 @@ class SIEMIntegration:
                 # Create a client context and explicitly restrict to modern TLS
                 context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
                 
-                # Enforce modern TLS versions (TLS 1.2+)
+                # Enforce modern TLS versions (TLS 1.2+) explicitly.
                 # Prefer minimum_version when available (Python 3.7+),
                 # otherwise fall back to disabling older protocol versions.
                 if hasattr(ssl, "TLSVersion"):
                     context.minimum_version = ssl.TLSVersion.TLSv1_2
                 else:
+                    # Disable legacy SSL/TLS protocol versions if the flags exist.
+                    if hasattr(ssl, "OP_NO_SSLv2"):
+                        context.options |= ssl.OP_NO_SSLv2
+                    if hasattr(ssl, "OP_NO_SSLv3"):
+                        context.options |= ssl.OP_NO_SSLv3
                     if hasattr(ssl, "OP_NO_TLSv1"):
                         context.options |= ssl.OP_NO_TLSv1
                     if hasattr(ssl, "OP_NO_TLSv1_1"):
