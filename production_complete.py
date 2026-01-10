@@ -28,6 +28,10 @@ from watchdog.events import FileSystemEventHandler
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 import logging
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -47,8 +51,11 @@ def validate_path(path: str) -> bool:
         return False
     
     try:
+        # Decode URL-encoded sequences first (e.g., %2e%2e -> ..)
+        decoded_path = unquote(path)
+        
         # Resolve to absolute path and normalize
-        abs_path = os.path.abspath(path)
+        abs_path = os.path.abspath(decoded_path)
         
         # Check for empty path after normalization
         if not abs_path:
@@ -56,8 +63,12 @@ def validate_path(path: str) -> bool:
         
         # Check for path traversal attempts using normalized path
         # This handles encoded sequences and /./  patterns
-        normalized_input = os.path.normpath(os.path.abspath(path))
-        if '..' in normalized_input or path.startswith('~'):
+        normalized_input = os.path.normpath(os.path.abspath(decoded_path))
+        if '..' in normalized_input:
+            return False
+        
+        # Block tilde expansion attempts
+        if '~' in decoded_path:
             return False
         
         # On Windows, ensure it's a valid drive letter format or UNC path
