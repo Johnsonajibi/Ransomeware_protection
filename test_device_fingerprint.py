@@ -4,6 +4,8 @@ Test the enhanced device fingerprinting implementation
 """
 
 import sys
+import os
+import tempfile
 from device_fingerprint_enhanced import EnhancedDeviceFingerprintingPro
 
 def test_device_fingerprinting():
@@ -36,9 +38,10 @@ def test_device_fingerprinting():
     print(f"  Verification: {'✓ PASS' if is_valid else '✗ FAIL'}")
     print()
     
-    # Test storage
+    # Test storage - use cross-platform temp directory
     print("Testing fingerprint storage...")
-    test_path = "/tmp/test_device_fingerprint.json"
+    temp_dir = tempfile.gettempdir()
+    test_path = os.path.join(temp_dir, "test_device_fingerprint.json")
     fp_engine.store_fingerprint(test_path)
     
     # Verify stored file

@@ -25,6 +25,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
 
+# Minimum compliance threshold for passing validation
+COMPLIANCE_THRESHOLD = 70
+
 @dataclass
 class ValidationResult:
     """Result of a validation check"""
@@ -83,7 +86,11 @@ class ReadmeComplianceValidator:
         
         if driver_c.exists():
             # Check for key kernel driver components
-            content = driver_c.read_text(errors='ignore')
+            try:
+                content = driver_c.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {driver_c}: {e}")
             
             has_minifilter = "fltKernel.h" in content
             has_ioctl = "IOCTL_AR_" in content
@@ -119,7 +126,11 @@ class ReadmeComplianceValidator:
         manager_cpp = self.repo_path / "RealAntiRansomwareManager_v2.cpp"
         
         if manager_cpp.exists():
-            content = manager_cpp.read_text(errors='ignore')
+            try:
+                content = manager_cpp.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {manager_cpp}: {e}")
             
             has_ioctl_defs = "IOCTL_AR_" in content
             has_sha256 = "SHA256" in content or "CryptAcquireContext" in content
@@ -192,7 +203,12 @@ class ReadmeComplianceValidator:
             has_seal = False
             
             for tpm_file in found_files:
-                content = tpm_file.read_text(errors='ignore')
+                try:
+                    content = tpm_file.read_text(encoding='utf-8', errors='replace')
+                except Exception as e:
+                    content = ""
+                    print(f"Warning: Could not read {tpm_file}: {e}")
+                    continue
                 if "wmi" in content.lower() or "WMI" in content:
                     has_wmi = True
                 if "PCR" in content or "pcr" in content:
@@ -229,7 +245,11 @@ class ReadmeComplianceValidator:
         fp_file = self.repo_path / "device_fingerprint_enhanced.py"
         
         if fp_file.exists():
-            content = fp_file.read_text(errors='ignore')
+            try:
+                content = fp_file.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {fp_file}: {e}")
             
             # Check for hardware layers mentioned in README
             has_cpu = "cpu" in content.lower() or "CPUID" in content
@@ -279,7 +299,12 @@ class ReadmeComplianceValidator:
             has_pqcdualusb = False
             
             for pqc_file in found_files:
-                content = pqc_file.read_text(errors='ignore')
+                try:
+                    content = pqc_file.read_text(encoding='utf-8', errors='replace')
+                except Exception as e:
+                    content = ""
+                    print(f"Warning: Could not read {pqc_file}: {e}")
+                    continue
                 if "dilithium" in content.lower() or "ML-DSA" in content:
                     has_dilithium = True
                 if "pqcdualusb" in content:
@@ -314,7 +339,11 @@ class ReadmeComplianceValidator:
         audit_viewer = self.repo_path / "view_audit_logs.py"
         
         if audit_viewer.exists():
-            content = audit_viewer.read_text(errors='ignore')
+            try:
+                content = audit_viewer.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {audit_viewer}: {e}")
             
             has_json = ".jsonl" in content or "json" in content.lower()
             has_tpm_field = "tpm_used" in content
@@ -432,7 +461,11 @@ class ReadmeComplianceValidator:
         manager_cpp = self.repo_path / "RealAntiRansomwareManager_v2.cpp"
         
         if manager_cpp.exists():
-            content = manager_cpp.read_text(errors='ignore')
+            try:
+                content = manager_cpp.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {manager_cpp}: {e}")
             
             # Commands documented in README
             commands = {
@@ -481,7 +514,11 @@ class ReadmeComplianceValidator:
         health_monitor = self.repo_path / "health_monitor.py"
         
         if health_monitor.exists():
-            content = health_monitor.read_text(errors='ignore')
+            try:
+                content = health_monitor.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {health_monitor}: {e}")
             
             has_checks = "HealthCheck" in content or "check_" in content
             has_driver_check = "driver" in content.lower() and "kernel" in content.lower()
@@ -521,11 +558,19 @@ class ReadmeComplianceValidator:
         has_driver_tokens = False
         
         if manager_cpp.exists():
-            content = manager_cpp.read_text(errors='ignore')
+            try:
+                content = manager_cpp.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {manager_cpp}: {e}")
             has_manager_tokens = "SERVICE_TOKEN" in content and "ISSUE_SERVICE_TOKEN" in content
         
         if driver_c.exists():
-            content = driver_c.read_text(errors='ignore')
+            try:
+                content = driver_c.read_text(encoding='utf-8', errors='replace')
+            except Exception as e:
+                content = ""
+                print(f"Warning: Could not read {driver_c}: {e}")
             has_driver_tokens = "SERVICE_TOKEN" in content or "TOKEN" in content
         
         if has_manager_tokens and has_driver_tokens:
@@ -601,7 +646,7 @@ def main():
     status_counts, score = validator.print_summary()
     
     # Exit with error code if compliance is low
-    if score < 70:
+    if score < COMPLIANCE_THRESHOLD:
         sys.exit(1)
     else:
         sys.exit(0)

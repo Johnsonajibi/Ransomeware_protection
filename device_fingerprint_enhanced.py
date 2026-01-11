@@ -81,9 +81,14 @@ class EnhancedDeviceFingerprintingPro:
         """Get BIOS UUID and firmware version"""
         try:
             if HAS_WMI and self.wmi_conn:
-                for bios in self.wmi_conn.Win32_BIOS():
-                    for cs in self.wmi_conn.Win32_ComputerSystemProduct():
-                        return f"{cs.UUID}:{bios.SerialNumber}:{bios.Version}"
+                # Get first BIOS and ComputerSystemProduct entry explicitly
+                bios_list = list(self.wmi_conn.Win32_BIOS())
+                cs_list = list(self.wmi_conn.Win32_ComputerSystemProduct())
+                
+                if bios_list and cs_list:
+                    bios = bios_list[0]
+                    cs = cs_list[0]
+                    return f"{cs.UUID}:{bios.SerialNumber}:{bios.Version}"
         except Exception:
             pass
         
@@ -196,12 +201,13 @@ class EnhancedDeviceFingerprintingPro:
         combined = "|".join(layers)
         
         # Hash using BLAKE2b with documented parameters
-        # person='ar-hybrid', salt='antiransomw'
+        # person='ar-hybrid' (padded to 16 bytes), salt='antiransomw' (padded to 16 bytes)
+        # BLAKE2b requires exactly 16-byte salt and person parameters
         hasher = hashlib.blake2b(
             combined.encode('utf-8'),
             digest_size=32,
-            person=b'ar-hybrid',
-            salt=b'antiransomw'
+            person=b'ar-hybrid\x00\x00\x00\x00\x00\x00\x00',  # 9 + 7 padding = 16 bytes
+            salt=b'antiransomw\x00\x00\x00\x00\x00'  # 11 + 5 padding = 16 bytes
         )
         fingerprint = hasher.hexdigest()
         
