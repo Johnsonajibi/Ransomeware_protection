@@ -18,55 +18,52 @@ try:
 except ImportError:
     from urllib import unquote
 
-def validate_path(path: str) -> bool:
+def validate_path(path: str, base_dir: str = None) -> bool:
     """
-    Validate and sanitize file paths to prevent path traversal attacks.
+    Validate path to prevent directory traversal attacks.
     
     Args:
         path: The path to validate
+        base_dir: Optional base directory that path must be within
         
     Returns:
-        bool: True if path is valid and safe, False otherwise
+        True if path is safe, False otherwise
     """
     if not path or not isinstance(path, str):
         return False
     
-    try:
-        # Decode URL-encoded sequences first (e.g., %2e%2e -> ..)
-        decoded_path = unquote(path)
-        
-        # Resolve to absolute path and normalize
-        abs_path = os.path.abspath(decoded_path)
-        
-        # Check for empty path after normalization
-        if not abs_path:
-            return False
-        
-        # Check for path traversal attempts using normalized path
-        # This handles encoded sequences and /./  patterns
-        normalized_input = os.path.normpath(os.path.abspath(decoded_path))
-        if '..' in normalized_input:
-            return False
-        
-        # Block tilde expansion attempts
-        if '~' in decoded_path:
-            return False
-        
-        # On Windows, ensure it's a valid drive letter format or UNC path
-        if sys.platform == 'win32':
-            # Valid Windows path should start with drive letter or UNC
-            if len(abs_path) < 3:
-                return False
-            # Check for drive letter (e.g., C:\) or UNC path (\\server\)
-            # Only check if we have at least 3 characters (verified above)
-            is_drive_path = abs_path[0].isalpha() and abs_path[1:3] == ':\\'
-            is_unc_path = abs_path.startswith('\\\\')
-            if not (is_drive_path or is_unc_path):
-                return False
-        
-        return True
-    except (ValueError, OSError, IndexError):
+    # Decode URL-encoded characters to catch %2e%2e attacks
+    decoded_path = unquote(path)
+    
+    # Get absolute and normalized path
+    abs_path = os.path.abspath(decoded_path)
+    normalized = os.path.normpath(abs_path)
+    
+    # Check for directory traversal patterns
+    if '..' in normalized or '..' in decoded_path:
         return False
+    
+    # Check for home directory expansion
+    if '~' in decoded_path:
+        return False
+    
+    # If base_dir specified, ensure path is within it
+    if base_dir:
+        base_abs = os.path.abspath(base_dir)
+        if not normalized.startswith(base_abs):
+            return False
+    
+    # Validate Windows paths
+    if os.name == 'nt':
+        # Check for valid drive letter
+        if len(normalized) >= 2 and normalized[1] == ':':
+            if not normalized[0].isalpha():
+                return False
+        # Check for UNC paths
+        if normalized.startswith('\\\\'):
+            return False
+    
+    return True
 
 try:
     import psutil
@@ -491,6 +488,11 @@ class ForensicsManager:
             # Save report
             report_path = os.path.join(self.forensics_dir, 
                                       f"incident_{event_id}_report.json")
+            
+            # Validate report path to prevent path traversal
+            if not validate_path(report_path, self.forensics_dir):
+                logger.error(f"Invalid report path rejected: {report_path}")
+                return None
             
             with open(report_path, 'w') as f:
                 json.dump(report, f, indent=2)
