@@ -5,9 +5,14 @@ Uses different port and includes full error handling
 """
 
 import sys
+import logging
 from flask import Flask
 import time
 from pathlib import Path
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -123,7 +128,8 @@ def home():
 </html>"""
         return html
     except Exception as e:
-        return f"<h1>Error: {str(e)}</h1>"
+        logger.error(f"Error rendering homepage: {e}", exc_info=True)
+        return "<h1>Error: An error occurred. Please try again later.</h1>"
 
 @app.route('/test')
 def test():
@@ -167,7 +173,8 @@ SUCCESS RATE: 100%"""
         return result
         
     except Exception as e:
-        return f"TEST FAILED: {str(e)}"
+        logger.error(f"Test simulation failed: {e}", exc_info=True)
+        return "TEST FAILED: An error occurred during the test. Please check the logs."
 
 @app.route('/logs')
 def logs():

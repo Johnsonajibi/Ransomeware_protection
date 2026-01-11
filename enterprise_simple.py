@@ -392,8 +392,8 @@ class EnterpriseAntiRansomware:
                 return render_template_string(DASHBOARD_TEMPLATE, stats=stats, events=recent_events)
                 
             except Exception as e:
-                logger.error(f"Dashboard error: {e}")
-                return f"Dashboard Error: {str(e)}"
+                logger.error(f"Dashboard error: {e}", exc_info=True)
+                return "Dashboard Error: An error occurred. Please try again later."
         
         @self.app.route('/api/status')
         def api_status():
