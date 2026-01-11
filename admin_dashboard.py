@@ -522,7 +522,8 @@ def create_web_app(db_manager: DatabaseManager, policy_engine: PolicyEngine,
                 policy_engine.save_policy()
                 return jsonify({'success': True, 'version': new_policy.version})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                logging.error(f"Failed to update policy: {e}", exc_info=True)
+                return jsonify({'success': False, 'error': 'Failed to update policy'}), 500
     
     @app.route('/policy')
     @login_required
