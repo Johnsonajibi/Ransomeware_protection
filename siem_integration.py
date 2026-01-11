@@ -412,8 +412,11 @@ class SIEMIntegration:
             
             return True
             
+        except ssl.SSLError as e:
+            logging.error(f"TLS handshake failed: {e}", exc_info=True)
+            return False
         except Exception as e:
-            print(f"⚠️ TCP send failed: {e}")
+            logging.error(f"TCP send failed: {e}", exc_info=True)
             return False
     
     def _send_udp(self, message: str) -> bool:
