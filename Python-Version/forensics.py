@@ -50,7 +50,11 @@ def validate_path(path: str, base_dir: str = None) -> bool:
     # If base_dir specified, ensure path is within it
     if base_dir:
         base_abs = os.path.abspath(base_dir)
-        if not normalized.startswith(base_abs):
+        # Ensure the normalized path is within base_abs (with proper separator check)
+        if not (normalized.startswith(base_abs) and 
+                (len(normalized) == len(base_abs) or 
+                 normalized[len(base_abs):len(base_abs)+1] in (os.sep, os.altsep) or
+                 normalized[len(base_abs):len(base_abs)+1] == '')):
             return False
     
     # Validate Windows paths
@@ -59,7 +63,7 @@ def validate_path(path: str, base_dir: str = None) -> bool:
         if len(normalized) >= 2 and normalized[1] == ':':
             if not normalized[0].isalpha():
                 return False
-        # Check for UNC paths
+        # Block UNC paths for security (per requirement - prevents network share attacks)
         if normalized.startswith('\\\\'):
             return False
     

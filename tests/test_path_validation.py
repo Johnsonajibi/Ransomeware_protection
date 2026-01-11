@@ -47,7 +47,11 @@ def validate_path(path: str, base_dir: str = None) -> bool:
     # If base_dir specified, ensure path is within it
     if base_dir:
         base_abs = os.path.abspath(base_dir)
-        if not normalized.startswith(base_abs):
+        # Ensure the normalized path is within base_abs (with proper separator check)
+        if not (normalized.startswith(base_abs) and 
+                (len(normalized) == len(base_abs) or 
+                 normalized[len(base_abs):len(base_abs)+1] in (os.sep, os.altsep) or
+                 normalized[len(base_abs):len(base_abs)+1] == '')):
             return False
     
     # Validate Windows paths
@@ -132,6 +136,12 @@ class TestPathValidation(unittest.TestCase):
         # Path outside base directory should be blocked
         outside_path = "/tmp/outside/file.txt"
         self.assertFalse(validate_path(outside_path, self.base_dir))
+        
+        # Test for base_dir bypass attempt (e.g., /home/user vs /home/user_malicious)
+        if self.base_dir == "/tmp/tmpXYZ":
+            bypass_attempt = "/tmp/tmpXYZ_malicious/file.txt"
+            self.assertFalse(validate_path(bypass_attempt, self.base_dir),
+                           "Failed to block base_dir bypass with similar prefix")
     
     def test_null_and_invalid_inputs(self):
         """Test that null and invalid inputs are rejected"""
