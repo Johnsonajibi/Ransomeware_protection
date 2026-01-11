@@ -7,6 +7,7 @@ watchdog==3.0.0
 psutil==5.9.6
 cryptography==44.0.1
 pywin32==306
+wmi==1.5.1
 
 # Smart card and USB authentication
 pyscard==2.0.7
