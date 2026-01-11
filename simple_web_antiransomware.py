@@ -14,6 +14,11 @@ from watchdog.events import FileSystemEventHandler
 import threading
 import sqlite3
 from datetime import datetime
+import logging
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -267,7 +272,8 @@ def api_test():
         
         return jsonify({'success': True, 'message': 'Test threat created'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        logger.error(f"Test threat creation failed: {e}")
+        return jsonify({'success': False, 'error': 'Test threat creation failed. Please try again.'})
 
 def start_monitoring():
     """Start file system monitoring"""

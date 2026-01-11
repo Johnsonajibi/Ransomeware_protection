@@ -4,6 +4,7 @@ Incident analysis, evidence collection, and forensic timeline
 """
 
 import os
+import sys
 import json
 import logging
 import sqlite3
@@ -12,6 +13,60 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import subprocess
 import tempfile
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
+
+def validate_path(path: str) -> bool:
+    """
+    Validate and sanitize file paths to prevent path traversal attacks.
+    
+    Args:
+        path: The path to validate
+        
+    Returns:
+        bool: True if path is valid and safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    try:
+        # Decode URL-encoded sequences first (e.g., %2e%2e -> ..)
+        decoded_path = unquote(path)
+        
+        # Resolve to absolute path and normalize
+        abs_path = os.path.abspath(decoded_path)
+        
+        # Check for empty path after normalization
+        if not abs_path:
+            return False
+        
+        # Check for path traversal attempts using normalized path
+        # This handles encoded sequences and /./  patterns
+        normalized_input = os.path.normpath(os.path.abspath(decoded_path))
+        if '..' in normalized_input:
+            return False
+        
+        # Block tilde expansion attempts
+        if '~' in decoded_path:
+            return False
+        
+        # On Windows, ensure it's a valid drive letter format or UNC path
+        if sys.platform == 'win32':
+            # Valid Windows path should start with drive letter or UNC
+            if len(abs_path) < 3:
+                return False
+            # Check for drive letter (e.g., C:\) or UNC path (\\server\)
+            # Only check if we have at least 3 characters (verified above)
+            is_drive_path = abs_path[0].isalpha() and abs_path[1:3] == ':\\'
+            is_unc_path = abs_path.startswith('\\\\')
+            if not (is_drive_path or is_unc_path):
+                return False
+        
+        return True
+    except (ValueError, OSError, IndexError):
+        return False
 
 try:
     import psutil
@@ -35,6 +90,11 @@ class ForensicsManager:
         Args:
             forensics_dir: Directory for forensic data
         """
+        # Validate forensics_dir to prevent path traversal attacks
+        if not validate_path(forensics_dir):
+            logger.warning(f"Invalid forensics_dir rejected: {forensics_dir}")
+            forensics_dir = "C:\\ProgramData\\AntiRansomware\\forensics"
+        
         self.forensics_dir = forensics_dir
         os.makedirs(forensics_dir, exist_ok=True)
         

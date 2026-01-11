@@ -7,11 +7,66 @@ from flask import Flask, render_template, jsonify, request, redirect, url_for
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import os
+import sys
 import json
 import logging
 from datetime import datetime, timedelta
 from functools import wraps
 import yaml
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
+
+def validate_path(path: str) -> bool:
+    """
+    Validate and sanitize file paths to prevent path traversal attacks.
+    
+    Args:
+        path: The path to validate
+        
+    Returns:
+        bool: True if path is valid and safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    try:
+        # Decode URL-encoded sequences first (e.g., %2e%2e -> ..)
+        decoded_path = unquote(path)
+        
+        # Resolve to absolute path and normalize
+        abs_path = os.path.abspath(decoded_path)
+        
+        # Check for empty path after normalization
+        if not abs_path:
+            return False
+        
+        # Check for path traversal attempts using normalized path
+        # This handles encoded sequences and /./  patterns
+        normalized_input = os.path.normpath(os.path.abspath(decoded_path))
+        if '..' in normalized_input:
+            return False
+        
+        # Block tilde expansion attempts
+        if '~' in decoded_path:
+            return False
+        
+        # On Windows, ensure it's a valid drive letter format or UNC path
+        if sys.platform == 'win32':
+            # Valid Windows path should start with drive letter or UNC
+            if len(abs_path) < 3:
+                return False
+            # Check for drive letter (e.g., C:\) or UNC path (\\server\)
+            # Only check if we have at least 3 characters (verified above)
+            is_drive_path = abs_path[0].isalpha() and abs_path[1:3] == ':\\'
+            is_unc_path = abs_path.startswith('\\\\')
+            if not (is_drive_path or is_unc_path):
+                return False
+        
+        return True
+    except (ValueError, OSError, IndexError):
+        return False
 
 # Import our modules
 try:
@@ -310,7 +365,8 @@ def get_incident_report(event_id):
         
         report_path = forensics.generate_incident_report(event_id)
         
-        if report_path and os.path.exists(report_path):
+        # Validate report_path to prevent path traversal attacks
+        if report_path and validate_path(report_path) and os.path.exists(report_path):
             with open(report_path, 'r') as f:
                 report = json.load(f)
             return jsonify(report)
@@ -318,7 +374,7 @@ def get_incident_report(event_id):
             return jsonify({'error': 'Report generation failed'}), 500
     except Exception as e:
         logger.error(f"Error generating report: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Unable to generate incident report. Please try again.'}), 500
 
 
 # WebSocket events for real-time updates

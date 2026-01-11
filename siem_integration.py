@@ -370,7 +370,7 @@ class SIEMIntegration:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(10)
             
-            # Wrap with TLS if needed
+            # Wrap with TLS if needed (before connecting for TLS handshake)
             if use_tls:
                 # Create a client context and explicitly restrict to modern TLS
                 context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
@@ -402,6 +402,7 @@ class SIEMIntegration:
                         self.config['tls_client_key']
                     )
                 
+                # Wrap socket with TLS using SSLContext (ensures TLS 1.2+ enforcement)
                 sock = context.wrap_socket(sock, server_hostname=server)
             
             # Connect and send

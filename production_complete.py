@@ -28,10 +28,64 @@ from watchdog.events import FileSystemEventHandler
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 import logging
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def validate_path(path: str) -> bool:
+    """
+    Validate and sanitize file paths to prevent path traversal attacks.
+    
+    Args:
+        path: The path to validate
+        
+    Returns:
+        bool: True if path is valid and safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    try:
+        # Decode URL-encoded sequences first (e.g., %2e%2e -> ..)
+        decoded_path = unquote(path)
+        
+        # Resolve to absolute path and normalize
+        abs_path = os.path.abspath(decoded_path)
+        
+        # Check for empty path after normalization
+        if not abs_path:
+            return False
+        
+        # Check for path traversal attempts using normalized path
+        # This handles encoded sequences and /./  patterns
+        normalized_input = os.path.normpath(os.path.abspath(decoded_path))
+        if '..' in normalized_input:
+            return False
+        
+        # Block tilde expansion attempts
+        if '~' in decoded_path:
+            return False
+        
+        # On Windows, ensure it's a valid drive letter format or UNC path
+        if sys.platform == 'win32':
+            # Valid Windows path should start with drive letter or UNC
+            if len(abs_path) < 3:
+                return False
+            # Check for drive letter (e.g., C:\) or UNC path (\\server\)
+            # Only check if we have at least 3 characters (verified above)
+            is_drive_path = abs_path[0].isalpha() and abs_path[1:3] == ':\\'
+            is_unc_path = abs_path.startswith('\\\\')
+            if not (is_drive_path or is_unc_path):
+                return False
+        
+        return True
+    except (ValueError, OSError, IndexError):
+        return False
 
 @dataclass
 class ProtectedFolder:
@@ -740,7 +794,8 @@ def api_add_folder():
         usb_required = data.get('usb_required', True)
         kernel_protection = data.get('kernel_protection', True)
         
-        if not path or not os.path.exists(path):
+        # Validate path to prevent path traversal attacks
+        if not path or not validate_path(path) or not os.path.exists(path):
             return jsonify({'success': False, 'error': 'Invalid folder path'})
         
         # Create protected folder
@@ -770,7 +825,7 @@ def api_add_folder():
         
     except Exception as e:
         logger.error(f"Error adding folder: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Unable to add folder to protection. Please try again.'})
 
 @app.route('/api/remove-folder', methods=['POST'])
 def api_remove_folder():
@@ -795,7 +850,7 @@ def api_remove_folder():
         
     except Exception as e:
         logger.error(f"Error removing folder: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Unable to remove folder from protection. Please try again.'})
 
 @app.route('/api/authorize-dongle', methods=['POST'])
 def api_authorize_dongle():
@@ -829,7 +884,7 @@ def api_authorize_dongle():
             
     except Exception as e:
         logger.error(f"Error authorizing dongle: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Authentication failed. Please try again.'})
 
 @app.route('/api/browse-folders', methods=['POST'])
 def api_browse_folders():
@@ -837,6 +892,11 @@ def api_browse_folders():
     try:
         data = request.get_json()
         path = data.get('path', 'C:\\')
+        
+        # Validate path to prevent path traversal attacks
+        if not validate_path(path):
+            logger.warning(f"Invalid path rejected in browse_folders_api: {path}")
+            path = 'C:\\'
         
         # Normalize path
         if not path.endswith('\\') and path != '/':
@@ -861,13 +921,14 @@ def api_browse_folders():
         except PermissionError:
             return jsonify({'success': False, 'error': 'Permission denied to access folder'})
         except Exception as e:
-            return jsonify({'success': False, 'error': f'Error reading folder: {str(e)}'})
+            logger.error(f"Error reading folder: {e}")
+            return jsonify({'success': False, 'error': 'Unable to read folder contents. Please try again.'})
         
         return jsonify({'success': True, 'folders': folders})
         
     except Exception as e:
         logger.error(f"Error browsing folders: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Unable to browse folders. Please check permissions and try again.'})
 
 @app.route('/api/scan-usb', methods=['POST'])
 def api_scan_usb():
@@ -878,7 +939,7 @@ def api_scan_usb():
         return jsonify({'success': True, 'devices': devices})
     except Exception as e:
         logger.error(f"USB scan error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Unable to scan USB devices. Please try again.'})
 
 @app.route('/policies')
 def policies():
@@ -952,7 +1013,7 @@ def api_scan_usb():
         return jsonify({'success': True, 'devices': devices})
     except Exception as e:
         logger.error(f"USB scan error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': 'Unable to scan USB devices. Please try again.'})
 
 def start_gui_setup():
     """Start GUI setup wizard"""
