@@ -3,8 +3,8 @@
 # Basic Site Configuration
 title: Anti-Ransomware Protection Platform
 description: Enterprise-grade ransomware protection with hardware-gated token enforcement, kernel-level monitoring, and behavioral threat detection.
-url: https://johnsonajibi.github.io/Ransomeware_protection
-baseurl: /Ransomeware_protection
+url: https://johnsonajibi.github.io/Ransomware_protection
+baseurl: /Ransomware_protection
 
 # Repository Configuration
 repository: johnsonajibi/Ransomeware_protection
