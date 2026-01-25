@@ -27,6 +27,61 @@ import logging
 from cryptography.fernet import Fernet
 import tkinter as tk
 from tkinter import filedialog, messagebox
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
+
+def validate_path(path: str, base_dir: str = None) -> bool:
+    """
+    Validate path to prevent directory traversal attacks.
+    
+    Args:
+        path: The path to validate
+        base_dir: Optional base directory that path must be within
+        
+    Returns:
+        True if path is safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    # Decode URL-encoded characters to catch %2e%2e attacks
+    decoded_path = unquote(path)
+    
+    # Get absolute and normalized path
+    abs_path = os.path.abspath(decoded_path)
+    normalized = os.path.normpath(abs_path)
+    
+    # Check for directory traversal patterns
+    if '..' in normalized or '..' in decoded_path:
+        return False
+    
+    # Check for home directory expansion
+    if '~' in decoded_path:
+        return False
+    
+    # If base_dir specified, ensure path is within it
+    if base_dir:
+        base_abs = os.path.abspath(base_dir)
+        # Ensure the normalized path is within base_abs (with proper separator check)
+        if not (normalized.startswith(base_abs) and 
+                (len(normalized) == len(base_abs) or 
+                 normalized[len(base_abs):len(base_abs)+1] in (os.sep, os.altsep) or
+                 normalized[len(base_abs):len(base_abs)+1] == '')):
+            return False
+    
+    # Validate Windows paths
+    if os.name == 'nt':
+        # Check for valid drive letter
+        if len(normalized) >= 2 and normalized[1] == ':':
+            if not normalized[0].isalpha():
+                return False
+        # Block UNC paths for security (per requirement - prevents network share attacks)
+        if normalized.startswith('\\\\'):
+            return False
+    
+    return True
 
 # Try to import smart card libraries
 try:
@@ -525,6 +580,11 @@ class RealFolderBrowser:
     def browse_folders(start_path="C:\\"):
         """Browse real filesystem"""
         try:
+            # Validate path to prevent path traversal attacks
+            if not validate_path(start_path):
+                logger.warning(f"Invalid path rejected in browse_folders: {start_path}")
+                start_path = "C:\\"
+            
             if not os.path.exists(start_path):
                 start_path = "C:\\"
             
@@ -857,6 +917,11 @@ class ProductionAntiRansomwareSystem:
     def add_protected_folder(self, path: str, policy_id: str = 'high_security') -> bool:
         """Add folder to protection"""
         try:
+            # Validate path to prevent path traversal attacks
+            if not validate_path(path):
+                logger.warning(f"Invalid path rejected: {path}")
+                return False
+            
             if not os.path.exists(path):
                 return False
             
@@ -954,9 +1019,10 @@ def api_browse_folders():
         })
         
     except Exception as e:
+        logger.error(f"Browse folders error: {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Unable to browse folders. Please check permissions and try again.'
         })
 
 @app.route('/api/add-folder', methods=['POST'])
@@ -973,7 +1039,8 @@ def api_add_folder():
             return jsonify({'success': False, 'error': 'Failed to add folder'})
             
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        logger.error(f"Add folder error: {e}")
+        return jsonify({'success': False, 'error': 'Unable to add folder to protection. Please try again.'})
 
 @app.route('/api/remove-folder', methods=['POST'])
 def api_remove_folder():
@@ -1004,7 +1071,8 @@ def api_remove_folder():
         return jsonify({'success': True})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        logger.error(f"Start protection error: {e}")
+        return jsonify({'success': False, 'error': 'Unable to start protection. Please check system configuration.'})
 
 @app.route('/api/authenticate-dongle', methods=['POST'])
 def api_authenticate_dongle():
@@ -1018,7 +1086,8 @@ def api_authenticate_dongle():
         return jsonify(result)
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        logger.error(f"Dongle authentication error: {e}")
+        return jsonify({'success': False, 'error': 'Authentication failed. Please try again.'})
 
 # Templates
 PRODUCTION_DASHBOARD_TEMPLATE = """

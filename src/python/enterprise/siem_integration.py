@@ -370,9 +370,26 @@ class SIEMIntegration:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(10)
             
-            # Wrap with TLS if needed
+            # Wrap with TLS if needed (before connecting for TLS handshake)
             if use_tls:
-                context = ssl.create_default_context()
+                # Create a client context and explicitly restrict to modern TLS
+                context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+                
+                # Enforce modern TLS versions (TLS 1.2+) explicitly.
+                # Prefer minimum_version when available (Python 3.7+),
+                # otherwise fall back to disabling older protocol versions.
+                if hasattr(ssl, "TLSVersion"):
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
+                else:
+                    # Disable legacy SSL/TLS protocol versions if the flags exist.
+                    if hasattr(ssl, "OP_NO_SSLv2"):
+                        context.options |= ssl.OP_NO_SSLv2
+                    if hasattr(ssl, "OP_NO_SSLv3"):
+                        context.options |= ssl.OP_NO_SSLv3
+                    if hasattr(ssl, "OP_NO_TLSv1"):
+                        context.options |= ssl.OP_NO_TLSv1
+                    if hasattr(ssl, "OP_NO_TLSv1_1"):
+                        context.options |= ssl.OP_NO_TLSv1_1
                 
                 # Load CA cert if provided
                 if self.config['tls_ca_cert']:
@@ -385,6 +402,7 @@ class SIEMIntegration:
                         self.config['tls_client_key']
                     )
                 
+                # Wrap socket with TLS using SSLContext (ensures TLS 1.2+ enforcement)
                 sock = context.wrap_socket(sock, server_hostname=server)
             
             # Connect and send
@@ -394,8 +412,11 @@ class SIEMIntegration:
             
             return True
             
+        except ssl.SSLError as e:
+            logging.error(f"TLS handshake failed: {e}", exc_info=True)
+            return False
         except Exception as e:
-            print(f"⚠️ TCP send failed: {e}")
+            logging.error(f"TCP send failed: {e}", exc_info=True)
             return False
     
     def _send_udp(self, message: str) -> bool:

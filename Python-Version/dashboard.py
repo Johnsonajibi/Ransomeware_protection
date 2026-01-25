@@ -7,11 +7,67 @@ from flask import Flask, render_template, jsonify, request, redirect, url_for
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import os
+import sys
 import json
 import logging
 from datetime import datetime, timedelta
 from functools import wraps
 import yaml
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
+
+def validate_path(path: str, base_dir: str = None) -> bool:
+    """
+    Validate path to prevent directory traversal attacks.
+    
+    Args:
+        path: The path to validate
+        base_dir: Optional base directory that path must be within
+        
+    Returns:
+        True if path is safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    # Decode URL-encoded characters to catch %2e%2e attacks
+    decoded_path = unquote(path)
+    
+    # Get absolute and normalized path
+    abs_path = os.path.abspath(decoded_path)
+    normalized = os.path.normpath(abs_path)
+    
+    # Check for directory traversal patterns
+    if '..' in normalized or '..' in decoded_path:
+        return False
+    
+    # Check for home directory expansion
+    if '~' in decoded_path:
+        return False
+    
+    # If base_dir specified, ensure path is within it
+    if base_dir:
+        base_abs = os.path.abspath(base_dir)
+        # Ensure the normalized path is within base_abs (with proper separator check)
+        if not (normalized.startswith(base_abs) and 
+                (len(normalized) == len(base_abs) or 
+                 normalized[len(base_abs):len(base_abs)+1] in (os.sep, os.altsep) or
+                 normalized[len(base_abs):len(base_abs)+1] == '')):
+            return False
+    
+    # Validate Windows paths
+    if os.name == 'nt':
+        # Check for valid drive letter
+        if len(normalized) >= 2 and normalized[1] == ':':
+            if not normalized[0].isalpha():
+                return False
+        # Block UNC paths for security (per requirement - prevents network share attacks)
+        if normalized.startswith('\\\\'):
+            return False
+    
+    return True
 
 # Import our modules
 try:
@@ -78,8 +134,8 @@ def get_status():
         }
         return jsonify(status)
     except Exception as e:
-        logger.error(f"Error getting status: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting status: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving system status'}), 500
 
 
 @app.route('/api/metrics')
@@ -104,8 +160,8 @@ def get_metrics():
         
         return jsonify(metrics)
     except Exception as e:
-        logger.error(f"Error getting metrics: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting metrics: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving metrics'}), 500
 
 
 @app.route('/api/threats')
@@ -131,8 +187,8 @@ def get_threats():
         
         return jsonify({'threats': threats})
     except Exception as e:
-        logger.error(f"Error getting threats: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting threats: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving threat information'}), 500
 
 
 @app.route('/api/quarantine')
@@ -146,8 +202,8 @@ def get_quarantine():
         
         return jsonify({'files': files})
     except Exception as e:
-        logger.error(f"Error getting quarantine: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting quarantine: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving quarantine information'}), 500
 
 
 @app.route('/api/quarantine/restore/<int:file_id>', methods=['POST'])
@@ -165,8 +221,8 @@ def restore_quarantined(file_id):
         else:
             return jsonify({'success': False, 'error': 'Restore failed'}), 500
     except Exception as e:
-        logger.error(f"Error restoring file: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error restoring file: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while restoring the file'}), 500
 
 
 @app.route('/api/quarantine/delete/<int:file_id>', methods=['DELETE'])
@@ -184,8 +240,8 @@ def delete_quarantined(file_id):
         else:
             return jsonify({'success': False, 'error': 'Delete failed'}), 500
     except Exception as e:
-        logger.error(f"Error deleting file: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error deleting file: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while deleting the file'}), 500
 
 
 @app.route('/api/signatures')
@@ -198,8 +254,8 @@ def get_signatures():
         stats = threat_intel.get_statistics()
         return jsonify(stats)
     except Exception as e:
-        logger.error(f"Error getting signatures: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting signatures: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving signature statistics'}), 500
 
 
 @app.route('/api/signatures/update', methods=['POST'])
@@ -220,8 +276,8 @@ def update_signatures():
         else:
             return jsonify({'success': False, 'error': 'Update failed'}), 500
     except Exception as e:
-        logger.error(f"Error updating signatures: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error updating signatures: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while updating signatures'}), 500
 
 
 @app.route('/api/config', methods=['GET'])
@@ -236,8 +292,8 @@ def get_config():
         else:
             return jsonify({'error': 'Config not found'}), 404
     except Exception as e:
-        logger.error(f"Error getting config: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting config: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving configuration'}), 500
 
 
 @app.route('/api/config', methods=['POST'])
@@ -253,8 +309,8 @@ def update_config():
         
         return jsonify({'success': True, 'message': 'Configuration updated'})
     except Exception as e:
-        logger.error(f"Error updating config: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error updating config: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while updating configuration'}), 500
 
 
 @app.route('/api/recovery/backups')
@@ -267,8 +323,8 @@ def get_backups():
         backups = recovery_manager.list_backups()
         return jsonify({'backups': backups})
     except Exception as e:
-        logger.error(f"Error getting backups: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting backups: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving backup list'}), 500
 
 
 @app.route('/api/recovery/vss')
@@ -281,8 +337,8 @@ def get_vss_snapshots():
         snapshots = recovery_manager.list_vss_snapshots()
         return jsonify({'snapshots': snapshots})
     except Exception as e:
-        logger.error(f"Error getting snapshots: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting snapshots: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving VSS snapshots'}), 500
 
 
 @app.route('/api/forensics/timeline')
@@ -297,8 +353,8 @@ def get_timeline():
         
         return jsonify({'timeline': timeline})
     except Exception as e:
-        logger.error(f"Error getting timeline: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting timeline: {e}", exc_info=True)
+        return jsonify({'error': 'An error occurred while retrieving forensic timeline'}), 500
 
 
 @app.route('/api/forensics/report/<int:event_id>')
@@ -310,7 +366,8 @@ def get_incident_report(event_id):
         
         report_path = forensics.generate_incident_report(event_id)
         
-        if report_path and os.path.exists(report_path):
+        # Validate report_path to prevent path traversal attacks
+        if report_path and validate_path(report_path) and os.path.exists(report_path):
             with open(report_path, 'r') as f:
                 report = json.load(f)
             return jsonify(report)
@@ -318,7 +375,7 @@ def get_incident_report(event_id):
             return jsonify({'error': 'Report generation failed'}), 500
     except Exception as e:
         logger.error(f"Error generating report: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Unable to generate incident report. Please try again.'}), 500
 
 
 # WebSocket events for real-time updates

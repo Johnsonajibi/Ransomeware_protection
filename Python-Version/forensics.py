@@ -4,6 +4,7 @@ Incident analysis, evidence collection, and forensic timeline
 """
 
 import os
+import sys
 import json
 import logging
 import sqlite3
@@ -12,6 +13,61 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import subprocess
 import tempfile
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
+
+def validate_path(path: str, base_dir: str = None) -> bool:
+    """
+    Validate path to prevent directory traversal attacks.
+    
+    Args:
+        path: The path to validate
+        base_dir: Optional base directory that path must be within
+        
+    Returns:
+        True if path is safe, False otherwise
+    """
+    if not path or not isinstance(path, str):
+        return False
+    
+    # Decode URL-encoded characters to catch %2e%2e attacks
+    decoded_path = unquote(path)
+    
+    # Get absolute and normalized path
+    abs_path = os.path.abspath(decoded_path)
+    normalized = os.path.normpath(abs_path)
+    
+    # Check for directory traversal patterns
+    if '..' in normalized or '..' in decoded_path:
+        return False
+    
+    # Check for home directory expansion
+    if '~' in decoded_path:
+        return False
+    
+    # If base_dir specified, ensure path is within it
+    if base_dir:
+        base_abs = os.path.abspath(base_dir)
+        # Ensure the normalized path is within base_abs (with proper separator check)
+        if not (normalized.startswith(base_abs) and 
+                (len(normalized) == len(base_abs) or 
+                 normalized[len(base_abs):len(base_abs)+1] in (os.sep, os.altsep) or
+                 normalized[len(base_abs):len(base_abs)+1] == '')):
+            return False
+    
+    # Validate Windows paths
+    if os.name == 'nt':
+        # Check for valid drive letter
+        if len(normalized) >= 2 and normalized[1] == ':':
+            if not normalized[0].isalpha():
+                return False
+        # Block UNC paths for security (per requirement - prevents network share attacks)
+        if normalized.startswith('\\\\'):
+            return False
+    
+    return True
 
 try:
     import psutil
@@ -35,6 +91,11 @@ class ForensicsManager:
         Args:
             forensics_dir: Directory for forensic data
         """
+        # Validate forensics_dir to prevent path traversal attacks
+        if not validate_path(forensics_dir):
+            logger.warning(f"Invalid forensics_dir rejected: {forensics_dir}")
+            forensics_dir = "C:\\ProgramData\\AntiRansomware\\forensics"
+        
         self.forensics_dir = forensics_dir
         os.makedirs(forensics_dir, exist_ok=True)
         
@@ -431,6 +492,11 @@ class ForensicsManager:
             # Save report
             report_path = os.path.join(self.forensics_dir, 
                                       f"incident_{event_id}_report.json")
+            
+            # Validate report path to prevent path traversal
+            if not validate_path(report_path, self.forensics_dir):
+                logger.error(f"Invalid report path rejected: {report_path}")
+                return None
             
             with open(report_path, 'w') as f:
                 json.dump(report, f, indent=2)
