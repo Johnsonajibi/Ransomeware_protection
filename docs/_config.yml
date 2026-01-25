@@ -1,0 +1,63 @@
+# Jekyll Configuration for Anti-Ransomware GitHub Pages
+
+# Basic Site Configuration
+title: Anti-Ransomware Protection Platform
+description: Enterprise-grade ransomware protection with hardware-gated token enforcement, kernel-level monitoring, and behavioral threat detection.
+url: https://johnsonajibi.github.io/Ransomeware_protection
+baseurl: /Ransomeware_protection
+
+# Repository Configuration
+repository: johnsonajibi/Ransomeware_protection
+github:
+  is_project_page: true
+  is_user_page: false
+
+# Theme Configuration
+remote_theme: pages-themes/slate@v0.2.0
+plugins:
+  - jekyll-remote-theme
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# Markdown Configuration
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+# Navigation
+nav:
+  - title: Home
+    url: /
+  - title: Quick Start
+    url: /guides/quickstart
+  - title: Architecture
+    url: /architecture
+  - title: API Reference
+    url: /api-reference
+  - title: Deployment
+    url: /guides/deployment
+  - title: Security Model
+    url: /security-model
+  - title: Operations
+    url: /guides/operations
+  - title: GitHub Repo
+    url: https://github.com/johnsonajibi/Ransomeware_protection
+
+# Build Configuration
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - .gitignore
+  - README.md
+  - CHANGELOG.md
+  - LICENSE
+  - .github/
+
+# Permalink Structure
+permalink: /:categories/:title/
+
+# Collections
+collections_dir: .
