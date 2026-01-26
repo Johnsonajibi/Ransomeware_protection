@@ -6,6 +6,7 @@ Critical security flaws in the current kernel protection implementation
 
 import os
 import sys
+import shlex
 from datetime import datetime
 
 class SecurityAudit:

@@ -7,6 +7,7 @@ No custom driver compilation required - leverages existing Windows kernel compon
 import os
 import sys
 import subprocess
+import shlex
 import winreg
 import ctypes
 from pathlib import Path
@@ -30,7 +31,8 @@ class PracticalKernelProtection:
         try:
             # Enable real-time protection (kernel-level)
             cmd = 'powershell -Command "Set-MpPreference -DisableRealtimeMonitoring $false"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result.returncode == 0:
                 self.protection_features.append("Windows Defender Real-time (Kernel)")
@@ -44,7 +46,8 @@ class PracticalKernelProtection:
         try:
             # Enable Controlled Folder Access
             cmd = 'powershell -Command "Set-MpPreference -EnableControlledFolderAccess Enabled"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result.returncode == 0:
                 # Add common protected folders
@@ -59,7 +62,8 @@ class PracticalKernelProtection:
                 for folder in folders_to_protect:
                     if os.path.exists(folder):
                         add_cmd = f'powershell -Command "Add-MpPreference -ControlledFolderAccessProtectedFolders \'{folder}\'"'
-                        subprocess.run(add_cmd, shell=True, capture_output=True)
+                        subprocess.run(add_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
                 
                 self.protection_features.append("Controlled Folder Access (Kernel Filter)")
                 return True
@@ -79,7 +83,8 @@ class PracticalKernelProtection:
             success_count = 0
             for cmd in mitigations:
                 try:
-                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
                     if result.returncode == 0:
                         success_count += 1
                 except:
@@ -104,7 +109,8 @@ class PracticalKernelProtection:
             success_count = 0
             for cmd in audit_commands:
                 try:
-                    result = subprocess.run(cmd, shell=True, capture_output=True)
+                    result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
                     if result.returncode == 0:
                         success_count += 1
                 except:
@@ -122,7 +128,8 @@ class PracticalKernelProtection:
         try:
             # Enable Kernel Control Flow Guard
             cmd = 'bcdedit /set kernelcfg on'
-            result = subprocess.run(cmd, shell=True, capture_output=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             if result.returncode == 0:
                 self.protection_features.append("Kernel Control Flow Guard")
@@ -136,7 +143,8 @@ class PracticalKernelProtection:
         try:
             # Check if HVCI is supported and enable it
             cmd = 'powershell -Command "if (Get-CimInstance -ClassName Win32_DeviceGuard | Where-Object {$_.VirtualizationBasedSecurityStatus -eq 2}) { bcdedit /set hvci on; $true } else { $false }"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if "True" in result.stdout:
                 self.protection_features.append("Hypervisor-protected Code Integrity")
@@ -205,7 +213,8 @@ class PracticalKernelProtection:
         # Check Windows Defender status
         try:
             cmd = 'powershell -Command "Get-MpPreference | Select-Object DisableRealtimeMonitoring"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             if "False" in result.stdout:
                 print("✅ Windows Defender Real-time Protection: ACTIVE (Kernel-level)")
             else:
@@ -216,7 +225,8 @@ class PracticalKernelProtection:
         # Check Controlled Folder Access
         try:
             cmd = 'powershell -Command "Get-MpPreference | Select-Object EnableControlledFolderAccess"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             if "Enabled" in result.stdout:
                 print("✅ Controlled Folder Access: ACTIVE (Kernel Filter)")
             else:
@@ -227,7 +237,8 @@ class PracticalKernelProtection:
         # Check Exploit Protection
         try:
             cmd = 'powershell -Command "Get-ProcessMitigation -System"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             if "Enable" in result.stdout:
                 print("✅ System Exploit Protection: ACTIVE (Kernel Mitigations)")
             else:

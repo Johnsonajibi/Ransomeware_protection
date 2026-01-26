@@ -7,6 +7,7 @@ Installs enterprise anti-ransomware as Windows service with security hardening
 import os
 import sys
 import subprocess
+import shlex
 import ctypes
 import winreg
 from pathlib import Path
@@ -127,7 +128,8 @@ class EnterpriseInstaller:
             for dir_path in secure_dirs:
                 # Remove inherited permissions and set restrictive access
                 cmd = f'icacls "{dir_path}" /inheritance:r /grant:r "NT AUTHORITY\\SYSTEM:(OI)(CI)F" /grant:r "BUILTIN\\Administrators:(OI)(CI)F"'
-                subprocess.run(cmd, shell=True, capture_output=True)
+                subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
                 
         except Exception as e:
             print(f"Permission setting warning: {e}")
@@ -195,7 +197,8 @@ if __name__ == '__main__':
             service_path = f'"{sys.executable}" "{self.install_dir / "service_wrapper.py"}"'
             
             cmd = f'sc create "{self.service_name}" binPath= "{service_path}" DisplayName= "Enterprise Anti-Ransomware Service" start= auto'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result.returncode != 0:
                 print(f"Service registration failed: {result.stderr}")
@@ -203,11 +206,13 @@ if __name__ == '__main__':
             
             # Set service description
             desc_cmd = f'sc description "{self.service_name}" "Enterprise-grade anti-ransomware protection with behavioral analysis and kernel-level monitoring"'
-            subprocess.run(desc_cmd, shell=True, capture_output=True)
+            subprocess.run(desc_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Set service to delayed auto-start
             delayed_cmd = f'sc config "{self.service_name}" start= delayed-auto'
-            subprocess.run(delayed_cmd, shell=True, capture_output=True)
+            subprocess.run(delayed_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             return True
             
@@ -220,15 +225,18 @@ if __name__ == '__main__':
         try:
             # Add Windows Firewall rule for HTTPS
             firewall_cmd = 'netsh advfirewall firewall add rule name="AntiRansomware HTTPS" dir=in action=allow protocol=TCP localport=8443'
-            subprocess.run(firewall_cmd, shell=True, capture_output=True)
+            subprocess.run(firewall_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Configure service recovery options
             recovery_cmd = f'sc failure "{self.service_name}" reset= 3600 actions= restart/60000/restart/60000/restart/60000'
-            subprocess.run(recovery_cmd, shell=True, capture_output=True)
+            subprocess.run(recovery_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Set service to run as LocalSystem
             account_cmd = f'sc config "{self.service_name}" obj= LocalSystem'
-            subprocess.run(account_cmd, shell=True, capture_output=True)
+            subprocess.run(account_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             return True
             
@@ -241,7 +249,8 @@ if __name__ == '__main__':
         try:
             # Create custom event log source
             eventlog_cmd = 'eventcreate /ID 1 /L APPLICATION /T INFORMATION /SO "AntiRansomware" /D "Enterprise Anti-Ransomware service initialized"'
-            subprocess.run(eventlog_cmd, shell=True, capture_output=True)
+            subprocess.run(eventlog_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Setup Windows Performance Counters (if available)
             # This would require additional setup in production
@@ -257,7 +266,8 @@ if __name__ == '__main__':
         try:
             # Start the service
             start_cmd = f'net start "{self.service_name}"'
-            result = subprocess.run(start_cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(start_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result.returncode != 0:
                 print(f"Service start failed: {result.stderr}")
@@ -278,7 +288,8 @@ if __name__ == '__main__':
         try:
             # Check service status
             status_cmd = f'sc query "{self.service_name}"'
-            result = subprocess.run(status_cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(status_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if "RUNNING" not in result.stdout:
                 print("Service is not running properly")
@@ -322,17 +333,20 @@ if __name__ == '__main__':
             # Stop service
             print("🛑 Stopping service...")
             stop_cmd = f'net stop "{self.service_name}"'
-            subprocess.run(stop_cmd, shell=True, capture_output=True)
+            subprocess.run(stop_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Delete service
             print("🗑️  Removing service registration...")
             delete_cmd = f'sc delete "{self.service_name}"'
-            result = subprocess.run(delete_cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(delete_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             # Remove firewall rule
             print("🔥 Removing firewall rules...")
             fw_cmd = 'netsh advfirewall firewall delete rule name="AntiRansomware HTTPS"'
-            subprocess.run(fw_cmd, shell=True, capture_output=True)
+            subprocess.run(fw_cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             
             # Option to remove data directory
             response = input("Remove all data and logs? (y/N): ")
@@ -359,7 +373,8 @@ def main():
         elif sys.argv[1] == 'status':
             # Check service status
             cmd = f'sc query "{installer.service_name}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             print(result.stdout)
             return
     

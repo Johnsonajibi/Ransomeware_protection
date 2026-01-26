@@ -10,6 +10,7 @@ import json
 import time
 import threading
 import subprocess
+import shlex
 import hashlib
 import sqlite3
 import psutil
@@ -265,7 +266,7 @@ class EnterpriseProcessMonitor:
             
             # Use PowerShell to verify signature
             cmd = f'powershell -Command "Get-AuthenticodeSignature \'{file_path}\' | Select-Object Status"'
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             
             return "Valid" in result.stdout
             
@@ -573,7 +574,8 @@ class EnterpriseFileProtection(FileSystemEventHandler):
         """Create Windows system restore point"""
         try:
             cmd = 'powershell -Command "Checkpoint-Computer -Description \'AntiRansomware Emergency\' -RestorePointType MODIFY_SETTINGS"'
-            subprocess.run(cmd, shell=True, capture_output=True)
+            subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
             logger.info("✅ System restore point created")
         except Exception as e:
             logger.error(f"Failed to create restore point: {e}")
@@ -583,7 +585,8 @@ class EnterpriseFileProtection(FileSystemEventHandler):
         try:
             # Windows toast notification
             cmd = f'powershell -Command "New-BurntToastNotification -Text \'CRITICAL RANSOMWARE THREAT\', \'Process {process_name} attempted to encrypt {os.path.basename(file_path)}\'"'
-            subprocess.run(cmd, shell=True, capture_output=True)
+            subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True)
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
     

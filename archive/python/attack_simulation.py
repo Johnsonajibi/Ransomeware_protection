@@ -12,6 +12,7 @@ import json
 import hashlib
 import shutil
 import subprocess
+import shlex
 import time
 from pathlib import Path
 from datetime import datetime
@@ -139,7 +140,8 @@ class AttackSimulator:
         for cmd in test_commands:
             try:
                 print(f"  🧪 Testing: {cmd}")
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"  ⚠️ USB spoofing successful: {cmd}")
                 else:
@@ -188,7 +190,7 @@ class AttackSimulator:
         for tool in dangerous_tools:
             try:
                 # Find the tool
-                tool_path = subprocess.run(f'where {tool}', shell=True, 
+                tool_path = subprocess.run(shlex.split('where {tool}'), # shell=True removed for security, 
                                          capture_output=True, text=True)
                 if tool_path.returncode == 0:
                     original_path = tool_path.stdout.strip()

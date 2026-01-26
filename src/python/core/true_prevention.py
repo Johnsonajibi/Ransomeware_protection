@@ -12,6 +12,7 @@ import threading
 import sqlite3
 import shutil
 import subprocess
+import shlex
 import stat
 import hashlib
 import secrets
@@ -446,7 +447,7 @@ class FilePermissionManager:
             # Also try Windows-specific attribute setting
             try:
                 # Set hidden and read-only attributes on Windows
-                subprocess.run(['attrib', '+R', str(file_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '+R', str(file_path)], capture_output=True)
             except:
                 pass
             
@@ -461,19 +462,19 @@ class FilePermissionManager:
         try:
             if read_only:
                 # Try to set folder to read-only using Windows commands
-                subprocess.run(['attrib', '+R', str(folder_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '+R', str(folder_path)], capture_output=True)
                 
                 # Also try using icacls to remove write permissions
                 # Remove write permissions for everyone
                 subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Everyone:W', '/T'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
             else:
                 # Restore permissions
-                subprocess.run(['attrib', '-R', str(folder_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '-R', str(folder_path)], capture_output=True)
                 subprocess.run([
                     'icacls', str(folder_path), '/remove:d', 'Everyone', '/T'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 
         except Exception as e:
             print(f"Warning: Folder permission setting failed for {folder_path}: {e}")
@@ -492,7 +493,7 @@ class FilePermissionManager:
                     try:
                         file_path.chmod(original_mode)
                         # Remove Windows read-only attribute
-                        subprocess.run(['attrib', '-R', str(file_path)], capture_output=True, shell=True)
+                        subprocess.run(['attrib', '-R', str(file_path)], capture_output=True)
                         del self.protected_files[file_path_str]
                         restored_count += 1
                     except Exception as e:
@@ -581,7 +582,8 @@ class WindowsSecurityAPI:
             success_count = 0
             for cmd in commands:
                 try:
-                    result = subprocess.run(cmd, capture_output=True, shell=True, text=True, timeout=10)
+                    result = subprocess.run(cmd, capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True, timeout=10)
                     if result.returncode == 0:
                         success_count += 1
                 except Exception:
@@ -622,7 +624,8 @@ class AdminProofProtection:
                 attr_cmd = ['attrib', '+S', '+H', '+R', str(path), '/S', '/D']
             
             try:
-                subprocess.run(attr_cmd, capture_output=True, shell=True, check=True)
+                subprocess.run(attr_cmd, capture_output=True, # shell=True removed for security
+                        capture_output=True, check=True)
                 print(f"    ✅ System attributes applied")
             except:
                 print(f"    ⚠️ System attributes partially applied")
@@ -638,9 +641,9 @@ class AdminProofProtection:
             print("  👑 Taking ownership and self-denying...")
             try:
                 subprocess.run(['takeown', '/F', str(path), '/A'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
                 subprocess.run(['icacls', str(path), '/deny', 'Everyone:(F)', '/C'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
                 print(f"    ✅ Ownership protection applied")
             except:
                 print(f"    ⚠️ Ownership protection partial")
@@ -678,19 +681,19 @@ class AdminProofProtection:
             
             # Reset security descriptor
             subprocess.run(['icacls', str(path), '/reset', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             # Remove attributes
             if path.is_file():
                 subprocess.run(['attrib', '-S', '-H', '-R', '-A', str(path)], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             else:
                 subprocess.run(['attrib', '-S', '-H', '-R', str(path), '/S', '/D'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             
             # Restore normal permissions
             subprocess.run(['icacls', str(path), '/grant', 'Everyone:(F)', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             self.admin_protected_paths.discard(str(path))
             print(f"  ✅ Admin unlock completed with token verification")
@@ -727,7 +730,8 @@ class UnbreakableFileManager(FilePermissionManager):
             try:
                 # Set system file attribute - this makes it a "system file"
                 result = subprocess.run(['attrib', '+S', '+H', '+R', str(file_path)], 
-                                      capture_output=True, shell=True, text=True)
+                                      capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✅ System attributes (+S +H +R) applied to: {file_path.name}")
                 else:
@@ -740,28 +744,32 @@ class UnbreakableFileManager(FilePermissionManager):
                 # Deny access to Everyone (including current user)
                 result = subprocess.run([
                     'icacls', str(file_path), '/deny', 'Everyone:(F)', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✅ Everyone access denied for: {file_path.name}")
                 
                 # Deny administrators specifically
                 result = subprocess.run([
                     'icacls', str(file_path), '/deny', 'Administrators:(F)', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✅ Administrator access denied for: {file_path.name}")
                 
                 # Deny SYSTEM account
                 result = subprocess.run([
                     'icacls', str(file_path), '/deny', 'SYSTEM:(F)', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✅ SYSTEM access denied for: {file_path.name}")
                 
                 # Deny specific user groups that might have elevated access
                 subprocess.run([
                     'icacls', str(file_path), '/deny', 'BUILTIN\\Administrators:(F)', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 
             except Exception as e:
                 print(f"⚠️ NTFS permission error: {e}")
@@ -771,14 +779,16 @@ class UnbreakableFileManager(FilePermissionManager):
                 # Take ownership as Administrator first
                 result = subprocess.run([
                     'takeown', '/F', str(file_path), '/A'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✅ Ownership taken for: {file_path.name}")
                 
                 # Then deny all access after taking ownership
                 subprocess.run([
                     'icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 
             except Exception as e:
                 print(f"⚠️ Ownership/deny error: {e}")
@@ -787,7 +797,8 @@ class UnbreakableFileManager(FilePermissionManager):
             try:
                 subprocess.run([
                     'cipher', '/E', str(file_path)
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
             except:
                 pass  # EFS might not be available
             
@@ -822,7 +833,7 @@ class UnbreakableFileManager(FilePermissionManager):
             # Remove system attributes
             try:
                 subprocess.run(['attrib', '-S', '-H', '-R', str(file_path)], 
-                             capture_output=True, shell=True)
+                             capture_output=True)
             except:
                 pass
             
@@ -831,12 +842,12 @@ class UnbreakableFileManager(FilePermissionManager):
                 # Reset permissions to allow full control
                 subprocess.run([
                     'icacls', str(file_path), '/reset', '/T', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 
                 # Grant full control to current user
                 subprocess.run([
                     'icacls', str(file_path), '/grant', f'{os.environ.get("USERNAME", "User")}:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 
             except Exception as e:
                 print(f"NTFS unlock warning: {e}")
@@ -894,27 +905,31 @@ class UnbreakableFileManager(FilePermissionManager):
             try:
                 # Make folder system and hidden
                 result = subprocess.run(['attrib', '+S', '+H', str(folder_path)], 
-                                      capture_output=True, shell=True, text=True)
+                                      capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"Attrib warning: {result.stderr}")
                 
                 # Deny all access to folder - this prevents new file creation
                 result = subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Everyone:(F)', '/T', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"ICACLS Everyone warning: {result.stderr}")
                 
                 result = subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Administrators:(F)', '/T', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"ICACLS Administrators warning: {result.stderr}")
                 
                 # Also deny SYSTEM account
                 subprocess.run([
                     'icacls', str(folder_path), '/deny', 'SYSTEM:(F)', '/T', '/C'
-                ], capture_output=True, shell=True, text=True)
+                ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 
                 print(f"🔒 Folder-level protection applied")
                 
@@ -996,10 +1011,10 @@ class UnbreakableFileManager(FilePermissionManager):
             # Remove folder protection
             try:
                 subprocess.run(['attrib', '-S', '-H', str(folder_path)], 
-                             capture_output=True, shell=True)
+                             capture_output=True)
                 subprocess.run([
                     'icacls', str(folder_path), '/reset', '/T', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
             except:
                 pass
             
@@ -1061,7 +1076,7 @@ class UnbreakableFileManager(FilePermissionManager):
             # Also try Windows-specific attribute setting
             try:
                 # Set hidden and read-only attributes on Windows
-                subprocess.run(['attrib', '+R', str(file_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '+R', str(file_path)], capture_output=True)
             except:
                 pass
             
@@ -1076,19 +1091,19 @@ class UnbreakableFileManager(FilePermissionManager):
         try:
             if read_only:
                 # Try to set folder to read-only using Windows commands
-                subprocess.run(['attrib', '+R', str(folder_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '+R', str(folder_path)], capture_output=True)
                 
                 # Also try using icacls to remove write permissions
                 # Remove write permissions for everyone
                 subprocess.run([
                     'icacls', str(folder_path), '/deny', 'Everyone:W', '/T'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
             else:
                 # Restore permissions
-                subprocess.run(['attrib', '-R', str(folder_path)], capture_output=True, shell=True)
+                subprocess.run(['attrib', '-R', str(folder_path)], capture_output=True)
                 subprocess.run([
                     'icacls', str(folder_path), '/remove:d', 'Everyone', '/T'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 
         except Exception as e:
             print(f"Warning: Folder permission setting failed for {folder_path}: {e}")
@@ -1107,7 +1122,7 @@ class UnbreakableFileManager(FilePermissionManager):
                     try:
                         file_path.chmod(original_mode)
                         # Remove Windows read-only attribute
-                        subprocess.run(['attrib', '-R', str(file_path)], capture_output=True, shell=True)
+                        subprocess.run(['attrib', '-R', str(file_path)], capture_output=True)
                         del self.protected_files[file_path_str]
                         restored_count += 1
                     except Exception as e:
@@ -1250,7 +1265,8 @@ class PreventionThreatDetector(FileSystemEventHandler):
             # Method 3: Windows command line removal
             try:
                 result = subprocess.run(['del', '/F', '/Q', str(file_path)], 
-                                      shell=True, capture_output=True, text=True)
+                                      # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
                 if not file_obj.exists():
                     return True
             except Exception:

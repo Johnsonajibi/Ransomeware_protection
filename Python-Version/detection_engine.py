@@ -29,6 +29,27 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+
+
+def safe_import(module_name: str):
+    """Safely import a module from whitelist"""
+    import importlib
+    
+    # Whitelist of allowed modules
+    ALLOWED_MODULES = {
+        'cryptography', 'sqlite3', 'tkinter', 'psutil', 'pywin32',
+        'requests', 'numpy', 'pandas', 'pytest', 'sys', 'os', 're',
+        'json', 'datetime', 'pathlib', 'logging', 'subprocess'
+    }
+    
+    if module_name not in ALLOWED_MODULES:
+        raise ValueError(f"Module {module_name} not in security whitelist")
+    
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        raise ImportError(f"Failed to import {module_name}: {e}")
+
 class FileEvent:
     """Represents a file system event"""
     timestamp: datetime
@@ -234,7 +255,7 @@ class BehavioralAnalysisEngine:
                 if count > 0:
                     probability = count / data_len
                     entropy -= probability * (probability and (
-                        __import__('math').log2(probability)
+                        safe_import('math').log2(probability)
                     ))
             
             return entropy

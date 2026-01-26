@@ -7,6 +7,7 @@ import stat
 import sys
 from pathlib import Path
 import subprocess
+import shlex
 
 class FolderUnlocker:
     def __init__(self):
@@ -45,7 +46,8 @@ class FolderUnlocker:
             
             # Remove system attributes using attrib command
             cmd = f'attrib -R -H -S "{folder_path}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result.returncode == 0:
                 print("✅ System attributes removed")
@@ -84,7 +86,8 @@ class FolderUnlocker:
         """Show all folders including hidden/system ones"""
         try:
             cmd = f'dir /A:D "{directory}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             print("📂 All folders (including hidden/system):")
             print(result.stdout)
         except Exception as e:

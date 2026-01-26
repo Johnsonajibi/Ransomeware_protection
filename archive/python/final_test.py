@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import time
 import subprocess
+import shlex
 
 def show_protection_status():
     """Show current protection status"""
@@ -48,7 +49,8 @@ def show_protection_status():
     # Try to remove protection with attrib
     try:
         result = subprocess.run(['attrib', '-S', '-H', '-R', str(test_folder)], 
-                              capture_output=True, shell=True, text=True, timeout=5)
+                              capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             print("❌ SECURITY ISSUE: Admin could remove folder attributes!")
             return False
@@ -61,7 +63,8 @@ def show_protection_status():
     try:
         result = subprocess.run([
             'icacls', str(test_folder), '/grant', 'Everyone:F'
-        ], capture_output=True, shell=True, text=True, timeout=5)
+        ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             print("❌ SECURITY ISSUE: Admin could grant permissions!")
             return False

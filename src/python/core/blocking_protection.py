@@ -12,6 +12,7 @@ import threading
 import sqlite3
 import shutil
 import subprocess
+import shlex
 from pathlib import Path
 from datetime import datetime
 import tkinter as tk
@@ -407,7 +408,8 @@ class BlockingThreatDetector(FileSystemEventHandler):
                     try:
                         # Method 3: Force delete with Windows command
                         subprocess.run(['del', '/F', '/Q', str(source_path)], 
-                                     shell=True, capture_output=True)
+                                     # shell=True removed for security
+                        capture_output=True, capture_output=True)
                         if not source_path.exists():
                             # File deleted, create placeholder in quarantine
                             with open(quarantine_path, 'w') as f:

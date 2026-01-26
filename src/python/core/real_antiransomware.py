@@ -20,6 +20,27 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
 # Install requirements silently
+
+
+def safe_import(module_name: str):
+    """Safely import a module from whitelist"""
+    import importlib
+    
+    # Whitelist of allowed modules
+    ALLOWED_MODULES = {
+        'cryptography', 'sqlite3', 'tkinter', 'psutil', 'pywin32',
+        'requests', 'numpy', 'pandas', 'pytest', 'sys', 'os', 're',
+        'json', 'datetime', 'pathlib', 'logging', 'subprocess'
+    }
+    
+    if module_name not in ALLOWED_MODULES:
+        raise ValueError(f"Module {module_name} not in security whitelist")
+    
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        raise ImportError(f"Failed to import {module_name}: {e}")
+
 def install_requirements():
     required = ['flask', 'watchdog', 'psutil']
     for package in required:

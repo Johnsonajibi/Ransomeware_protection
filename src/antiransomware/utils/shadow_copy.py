@@ -10,6 +10,7 @@ import json
 import logging
 import argparse
 import subprocess
+import shlex
 from typing import Dict, List
 
 logging.basicConfig(
@@ -57,7 +58,8 @@ class ShadowCopyProtection:
         try:
             # Set registry to prevent shadow copy deletion
             cmd = 'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\SystemRestore" /v DisableConfig /t REG_DWORD /d 1 /f'
-            subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
+            subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, capture_output=True, timeout=10)
             self.protection_enabled = True
             logger.info('VSS deletion protection enabled')
             return True

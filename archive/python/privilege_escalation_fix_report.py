@@ -7,6 +7,7 @@ Anti-ransomware system now blocks admin bypass attempts without USB tokens
 import os
 import sys
 import subprocess
+import shlex
 from pathlib import Path
 
 def main():
@@ -57,7 +58,7 @@ def main():
     
     # Test basic access
     try:
-        subprocess.run(['dir', test_folder], check=True, capture_output=True, shell=True)
+        subprocess.run(['dir', test_folder], check=True, capture_output=True)
         print("❌ FOLDER ACCESS: Failed (folder accessible)")
     except subprocess.CalledProcessError:
         print("✅ FOLDER ACCESS: Blocked (access denied)")
@@ -65,7 +66,8 @@ def main():
     # Test attribute modification
     try:
         result = subprocess.run(['attrib', '-S', '-H', '-R', test_folder], 
-                              capture_output=True, shell=True, text=True)
+                              capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
         if "Access denied" in result.stdout or "Access denied" in result.stderr:
             print("✅ ATTRIBUTE MODIFICATION: Blocked (access denied)")
         else:
@@ -76,10 +78,11 @@ def main():
     # Test permission changes
     try:
         result = subprocess.run(['icacls', test_folder, '/grant', 'Everyone:F'], 
-                              capture_output=True, shell=True, text=True)
+                              capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
         # Even if icacls succeeds, check if folder is still protected
         try:
-            subprocess.run(['dir', test_folder], check=True, capture_output=True, shell=True)
+            subprocess.run(['dir', test_folder], check=True, capture_output=True)
             print("❌ PERMISSION BYPASS: Failed (protection bypassed)")
         except subprocess.CalledProcessError:
             print("✅ PERMISSION BYPASS: Blocked (protection maintained)")

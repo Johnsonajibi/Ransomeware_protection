@@ -7,12 +7,14 @@ import os
 import sys
 import platform
 import subprocess
+import shlex
 from pathlib import Path
 
 def run_command(cmd, check=True):
     """Run command and handle errors"""
     print(f"Running: {cmd}")
-    result = subprocess.run(cmd, shell=True, check=check)
+    result = subprocess.run(cmd, # shell=True removed for security
+                        capture_output=True, check=check)
     return result.returncode == 0
 
 def build_grpc_stubs():

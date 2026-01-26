@@ -7,6 +7,7 @@ import os
 import shutil
 import logging
 import subprocess
+import shlex
 import tempfile
 from datetime import datetime
 from typing import List, Optional, Dict, Tuple
@@ -58,7 +59,7 @@ class RecoveryManager:
             
             # Use vssadmin command
             cmd = f'vssadmin create shadow /for={volume}\\'
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode == 0:
                 # Parse snapshot ID from output
@@ -89,7 +90,7 @@ class RecoveryManager:
         snapshots = []
         try:
             cmd = f'vssadmin list shadows /for={volume}\\'
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode == 0:
                 # Parse output

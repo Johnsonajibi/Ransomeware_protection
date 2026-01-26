@@ -9,6 +9,7 @@ import ctypes.wintypes
 import os
 import sys
 import subprocess
+import shlex
 import winreg
 from pathlib import Path
 
@@ -118,7 +119,7 @@ class SimplifiedKernelProtection:
                 "powershell", "-Command",
                 "Set-MpPreference -DisableRealtimeMonitoring $false"
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             return result.returncode == 0
         except:
             return False
@@ -131,7 +132,7 @@ class SimplifiedKernelProtection:
                 "powershell", "-Command",
                 "Set-MpPreference -EnableControlledFolderAccess Enabled"
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode == 0:
                 # Add our application to the allowed list
@@ -140,7 +141,7 @@ class SimplifiedKernelProtection:
                     "powershell", "-Command",
                     f"Add-MpPreference -ControlledFolderAccessAllowedApplications '{app_path}'"
                 ]
-                subprocess.run(allow_cmd, capture_output=True, text=True, shell=True)
+                subprocess.run(allow_cmd, capture_output=True, text=True)
                 return True
             
             return False
@@ -186,7 +187,7 @@ class SimplifiedKernelProtection:
                 "sfc /scannow"
             ]
             # Don't wait for SFC to complete, just start it
-            subprocess.Popen(cmd, shell=True)
+            subprocess.Popen(cmd)
             return True
         except:
             return False
@@ -204,7 +205,8 @@ class SimplifiedKernelProtection:
             success_count = 0
             for policy in audit_policies:
                 try:
-                    result = subprocess.run(policy, shell=True, capture_output=True)
+                    result = subprocess.run(policy, # shell=True removed for security
+                        capture_output=True, capture_output=True)
                     if result.returncode == 0:
                         success_count += 1
                 except:

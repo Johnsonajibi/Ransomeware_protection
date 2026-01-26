@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import time
 import subprocess
+import shlex
 
 def test_file_write_protection():
     """Test if files are actually protected from writing"""
@@ -56,7 +57,8 @@ def test_file_write_protection():
         try:
             result = subprocess.run([
                 'icacls', str(test_file), '/grant', 'Everyone:F'
-            ], capture_output=True, shell=True, text=True)
+            ], capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
             if result.returncode == 0:
                 print(f"❌ SECURITY BREACH: Admin could modify permissions!")
                 return False

@@ -28,23 +28,30 @@ from cryptography.fernet import Fernet
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-# Try to import smart card libraries
+# Check for Smart Card support (pyscard)
 try:
     from smartcard.System import readers
-    from smartcard.util import toHexString, toBytes
+    from smartcard.util import toHexString
     SMARTCARD_AVAILABLE = True
 except ImportError:
     SMARTCARD_AVAILABLE = False
-    print("⚠️  Smart card libraries not installed. Run: pip install pyscard")
+    print("⚠️  'pyscard' library not found - Smart Card features will be limited")
 
-# Try to import FIDO2 libraries
+# Check for FIDO2 support
 try:
-    from fido2.hid import CtapHidDevice
-    from fido2.client import Fido2Client
+    import fido2
     FIDO2_AVAILABLE = True
 except ImportError:
     FIDO2_AVAILABLE = False
-    print("⚠️  FIDO2 libraries not installed. Run: pip install fido2")
+
+# Import Enterprise Security (PQC)
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'python', 'enterprise'))
+try:
+    from enterprise_security_real import EnterpriseSecurityManager, ENTERPRISE_AVAILABLE
+except ImportError:
+    ENTERPRISE_AVAILABLE = False
+    EnterpriseSecurityManager = None
+    print("⚠️  Enterprise security module not found")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,9 +85,22 @@ class RealUSBDongleManager:
     def __init__(self):
         self.connected_dongles = []
         self.authenticated_dongles = set()
-        self.monitoring = False
         self.auth_tokens = {}
+        self.monitoring = False
         
+        # Initialize Enterprise Security (PQC) if available
+        self.pqc_manager = None
+        if ENTERPRISE_AVAILABLE:
+            try:
+                self.pqc_manager = EnterpriseSecurityManager()
+                logger.info("✅ PQC Manager initialized for USB authentication")
+            except Exception as e:
+                logger.error(f"Failed to initialize PQC Manager: {e}")
+
+    def get_connected_dongles(self):
+        """Returns a list of currently connected dongles."""
+        return self.connected_dongles
+
     def start_monitoring(self):
         """Start real USB monitoring"""
         self.monitoring = True
@@ -192,8 +212,33 @@ class RealUSBDongleManager:
             # Real authentication process
             if device['type'] == 'smartcard':
                 success = self._authenticate_smart_card(device, pin)
+            elif self.pqc_manager:
+                # Use Post-Quantum Authentication via Enterprise Security Manager
+                # This verifies the PQC signature on the USB token file
+                # Assuming device['mountpoint'] is available from detection
+                if 'mountpoint' in device:
+                    # Look for .qkey files
+                    import glob
+                    qkey_files = glob.glob(os.path.join(device['mountpoint'], "*.qkey"))
+                    if qkey_files:
+                        logger.info(f"🔍 Found Quantum Token: {qkey_files[0]}")
+                        success = self.pqc_manager.validate_quantum_token(qkey_files[0])
+                        if success:
+                            logger.info("✅ PQC Quantum Token Verified")
+                        else:
+                            logger.warning("❌ PQC Quantum Token Verification Failed")
+                    else:
+                        logger.warning("No Quantum Token (.qkey) found on device")
+                        success = False
+                else:
+                    success = False # Fallback if no mountpoint in device info
             else:
-                success = False
+                 # Fallback for standard USB if PQC not active/available (Legacy)
+                 # In a strict production system, we might default this to False,
+                 # but for compatibility we'll allow it if explicitly enabled in policy.
+                 # For now, defaulting to False to enforce "Real" security.
+                 logger.warning("PQC Manager not available and not a smart card - denying access")
+                 success = False
             
             if success:
                 # Generate real authentication token
@@ -219,18 +264,55 @@ class RealUSBDongleManager:
             return {'success': False, 'error': str(e)}
     
     def _authenticate_smart_card(self, device, pin):
-        """Authenticate with real smart card"""
+        """Authenticate with real smart card using PC/SC standard"""
         try:
             if not SMARTCARD_AVAILABLE:
+                logger.error("Smart card library (pyscard) not installed")
                 return False
             
-            # Real smart card authentication would go here
-            # For now, simulate success if PIN is provided
-            if pin and len(pin) >= 4:
-                logger.info(f"🔐 Smart card PIN verification: {device['name']}")
-                return True
+            from smartcard.System import readers
+            from smartcard.util import toHexString
             
-            return False
+            available_readers = readers()
+            if not available_readers:
+                logger.warning("No smart card readers found")
+                return False
+            
+            # Use the first available reader
+            reader = available_readers[0]
+            logger.info(f"Using reader: {reader}")
+            
+            connection = reader.createConnection()
+            connection.connect()
+            
+            # Select Main Applet (Example AID - would need to match specific card provisioning)
+            # Default to checking card presence and basic Verify PIN structure if no AID specified
+            
+            # 1. Verify PIN (ISO 7816-4)
+            # Class: 00, Ins: 20 (Verify), P1: 00, P2: 81 (Global PIN)
+            if not pin:
+                logger.warning("No PIN provided for smart card")
+                return False
+                
+            pin_bytes = [ord(c) for c in pin]
+            # Pad PIN to 8 bytes if needed (standard practice)
+            while len(pin_bytes) < 8:
+                pin_bytes.append(0xFF)
+            
+            apdu = [0x00, 0x20, 0x00, 0x81, len(pin_bytes)] + pin_bytes
+            
+            data, sw1, sw2 = connection.transmit(apdu)
+            
+            if sw1 == 0x90 and sw2 == 0x00:
+                logger.info("✅ Smart card PIN verified via hardware")
+                return True
+            elif sw1 == 0x63:
+                 logger.warning(f"❌ PIN verification failed. Attempts remaining: {sw2 & 0x0F}")
+                 return False
+            else:
+                logger.error(f"❌ Smart card error: {hex(sw1)} {hex(sw2)}")
+                return False
+                
         except Exception as e:
             logger.error(f"Smart card authentication error: {e}")
             return False

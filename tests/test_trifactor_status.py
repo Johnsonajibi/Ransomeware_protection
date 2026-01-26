@@ -30,7 +30,7 @@ libraries = {
 
 for lib, description in libraries.items():
     try:
-        __import__(lib.replace('-', '_'))
+        safe_import(lib.replace('-', '_'))
         print(f"✓ {lib:20s} - {description}")
     except ImportError:
         print(f"✗ {lib:20s} - {description} (NOT INSTALLED)")

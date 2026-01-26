@@ -4,6 +4,7 @@
 import sys
 import os
 import subprocess
+import shlex
 from pathlib import Path
 import time
 
@@ -22,7 +23,8 @@ def apply_ultimate_protection(folder_path):
     print("🔐 Step 1: Taking complete ownership...")
     try:
         subprocess.run(['takeown', '/F', str(folder_path), '/R', '/D', 'Y'], 
-                      capture_output=True, shell=True, check=True)
+                      capture_output=True, # shell=True removed for security
+                        capture_output=True, check=True)
         print("  ✅ Ownership taken")
     except:
         print("  ⚠️ Ownership taking had issues (may still work)")
@@ -32,7 +34,8 @@ def apply_ultimate_protection(folder_path):
     try:
         # System + Hidden + ReadOnly + Archive
         subprocess.run(['attrib', '+S', '+H', '+R', '+A', str(folder_path), '/S', '/D'], 
-                      capture_output=True, shell=True, check=True)
+                      capture_output=True, # shell=True removed for security
+                        capture_output=True, check=True)
         print("  ✅ System, Hidden, ReadOnly, Archive attributes applied")
     except Exception as e:
         print(f"  ⚠️ Attribute application: {e}")
@@ -53,7 +56,8 @@ def apply_ultimate_protection(folder_path):
     
     for cmd in security_commands:
         try:
-            result = subprocess.run(cmd, capture_output=True, shell=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
             if result.returncode == 0:
                 print(f"  ✅ Access denied: {cmd[3]}")
             else:
@@ -65,7 +69,7 @@ def apply_ultimate_protection(folder_path):
     print("🔐 Step 4: Removing inheritance...")
     try:
         subprocess.run(['icacls', str(folder_path), '/inheritance:r', '/T', '/C'], 
-                      capture_output=True, shell=True)
+                      capture_output=True)
         print("  ✅ Inheritance removed")
     except Exception as e:
         print(f"  ⚠️ Inheritance removal: {e}")
@@ -75,7 +79,7 @@ def apply_ultimate_protection(folder_path):
     try:
         # Try to use fsutil to mark as system critical
         subprocess.run(['fsutil', 'file', 'setshortname', str(folder_path), 'PROTECT'], 
-                      capture_output=True, shell=True)
+                      capture_output=True)
         print("  ✅ System critical marking attempted")
     except:
         print("  ⚠️ System critical marking not available")
@@ -91,11 +95,11 @@ def apply_ultimate_protection(folder_path):
                 
                 # Make lock file system and immutable
                 subprocess.run(['attrib', '+S', '+H', '+R', '+A', str(lock_file)], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
                 
                 # Deny access to lock file specifically
                 subprocess.run(['icacls', str(lock_file), '/deny', '*S-1-1-0:(F)', '/C'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
                 
                 print(f"  ✅ Lock anchor {i+1} created and protected")
             except:
@@ -140,7 +144,8 @@ def test_ultimate_protection(folder_path):
     # Test 3: Attribute removal
     try:
         result = subprocess.run(['attrib', '-S', '-H', '-R', str(folder_path)], 
-                              capture_output=True, shell=True, timeout=10)
+                              capture_output=True, # shell=True removed for security
+                        capture_output=True, timeout=10)
         if result.returncode == 0:
             print("❌ Test 3: Attribute removal - FAILED (attributes removed)")
         else:
@@ -153,7 +158,8 @@ def test_ultimate_protection(folder_path):
     # Test 4: Permission grant
     try:
         result = subprocess.run(['icacls', str(folder_path), '/grant', 'Everyone:F'], 
-                              capture_output=True, shell=True, timeout=10)
+                              capture_output=True, # shell=True removed for security
+                        capture_output=True, timeout=10)
         if result.returncode == 0:
             print("❌ Test 4: Permission grant - FAILED (permissions granted)")
         else:

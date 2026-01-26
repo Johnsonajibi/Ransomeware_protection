@@ -11,6 +11,7 @@ import platform
 from pathlib import Path
 from cryptography.fernet import Fernet
 import subprocess
+import shlex
 
 class TokenAuthenticatedAccess:
     def __init__(self):
@@ -76,12 +77,14 @@ class TokenAuthenticatedAccess:
         try:
             # Remove system attributes
             cmd1 = f'attrib -R -H -S "{folder_path}"'
-            result1 = subprocess.run(cmd1, shell=True, capture_output=True, text=True)
+            result1 = subprocess.run(cmd1, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             # Use icacls to restore permissions with token authentication
             username = os.getenv('USERNAME')
             cmd2 = f'icacls "{folder_path}" /grant {username}:F /T'
-            result2 = subprocess.run(cmd2, shell=True, capture_output=True, text=True)
+            result2 = subprocess.run(cmd2, # shell=True removed for security
+                        capture_output=True, capture_output=True, text=True)
             
             if result2.returncode == 0:
                 print("✅ Folder permissions restored with token authentication")

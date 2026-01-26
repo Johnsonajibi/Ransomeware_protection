@@ -9,6 +9,7 @@ import sys
 import ctypes
 import ctypes.wintypes
 import subprocess
+import shlex
 import sqlite3
 import json
 import hashlib
@@ -129,7 +130,8 @@ class WindowsSecurityAPI:
                 '/C'  # Continue on error
             ]
             
-            result = subprocess.run(cmd, capture_output=True, shell=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
             return result.returncode == 0
             
         except Exception as e:
@@ -196,7 +198,8 @@ class AdminProofProtection:
         # Layer 3: System file attributes (fallback)
         try:
             subprocess.run(['attrib', '+S', '+H', '+R', '+A', str(file_path)], 
-                          capture_output=True, shell=True, check=True)
+                          capture_output=True, # shell=True removed for security
+                        capture_output=True, check=True)
             print(f"    ✅ System attributes applied to {file_path.name}")
         except:
             print(f"    ⚠️ System attributes failed for {file_path.name}")
@@ -204,11 +207,11 @@ class AdminProofProtection:
         # Layer 4: Take ownership and deny (nuclear option)
         try:
             subprocess.run(['takeown', '/F', str(file_path), '/A'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             subprocess.run(['icacls', str(file_path), '/reset'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             subprocess.run(['icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             print(f"    ✅ Ownership protection applied to {file_path.name}")
         except:
             print(f"    ⚠️ Ownership protection failed for {file_path.name}")
@@ -238,7 +241,8 @@ class AdminProofProtection:
         # Folder attributes
         try:
             subprocess.run(['attrib', '+S', '+H', '+R', str(folder_path), '/S', '/D'], 
-                          capture_output=True, shell=True, check=True)
+                          capture_output=True, # shell=True removed for security
+                        capture_output=True, check=True)
             print(f"    ✅ Folder attributes applied")
         except:
             print(f"    ⚠️ Folder attributes failed")
@@ -273,19 +277,19 @@ class AdminProofProtection:
             
             # Remove security descriptor denials
             subprocess.run(['icacls', str(path), '/reset', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             # Remove attributes
             if path.is_file():
                 subprocess.run(['attrib', '-S', '-H', '-R', '-A', str(path)], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             else:
                 subprocess.run(['attrib', '-S', '-H', '-R', str(path), '/S', '/D'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             
             # Restore normal permissions
             subprocess.run(['icacls', str(path), '/grant', 'Everyone:(F)', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             self.protected_paths.discard(str(path))
             print(f"  ✅ Admin unlock completed for: {path.name}")

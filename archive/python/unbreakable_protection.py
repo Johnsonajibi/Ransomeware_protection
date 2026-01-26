@@ -9,6 +9,7 @@ import sys
 import ctypes
 import ctypes.wintypes
 import subprocess
+import shlex
 import threading
 import time
 import psutil
@@ -146,7 +147,7 @@ python "{Path(__file__).parent}/command_interceptor.py" "{cmd}" %*
                 new_path = f"{wrapper_dir};{current_path}"
                 subprocess.run([
                     'setx', 'PATH', new_path, '/M'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 print(f"✅ Added security wrappers to system PATH")
         except:
             print(f"⚠️ Could not modify system PATH")
@@ -220,10 +221,10 @@ class UnbreakableProtection:
             # System attributes with maximum flags
             if path.is_file():
                 subprocess.run(['attrib', '+S', '+H', '+R', '+A', str(path)], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             else:
                 subprocess.run(['attrib', '+S', '+H', '+R', str(path), '/S', '/D'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             
             # Multiple denial layers
             denial_commands = [
@@ -235,7 +236,7 @@ class UnbreakableProtection:
             ]
             
             for cmd in denial_commands:
-                subprocess.run(cmd, capture_output=True, shell=True)
+                subprocess.run(cmd, capture_output=True)
                 
         except Exception as e:
             print(f"Filesystem protection error: {e}")
@@ -245,11 +246,11 @@ class UnbreakableProtection:
         try:
             # Take ownership then deny access to ourselves
             subprocess.run(['takeown', '/F', str(path), '/A'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             # Create a security descriptor that denies access to everyone including us
             subprocess.run(['icacls', str(path), '/deny', '*S-1-1-0:(F)', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
         except Exception as e:
             print(f"Windows security error: {e}")
@@ -289,17 +290,17 @@ class UnbreakableProtection:
             
             # Remove all protection layers
             subprocess.run(['icacls', str(path), '/reset', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             if Path(path).is_file():
                 subprocess.run(['attrib', '-S', '-H', '-R', '-A', str(path)], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             else:
                 subprocess.run(['attrib', '-S', '-H', '-R', str(path), '/S', '/D'], 
-                              capture_output=True, shell=True)
+                              capture_output=True)
             
             subprocess.run(['icacls', str(path), '/grant', 'Everyone:(F)', '/T', '/C'], 
-                          capture_output=True, shell=True)
+                          capture_output=True)
             
             self.protected_paths.discard(str(path))
             print(f"✅ Unlocked with USB token verification")

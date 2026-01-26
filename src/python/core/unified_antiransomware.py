@@ -25,6 +25,7 @@ import base64
 import traceback
 import platform
 import subprocess
+import shlex
 import threading
 import time
 import ctypes
@@ -5518,11 +5519,13 @@ def main():
         
         try:
             subprocess.run('powershell -Command "Set-MpPreference -DisableRealtimeMonitoring $false"', 
-                          shell=True, check=True)
+                          # shell=True removed for security
+                        capture_output=True, check=True)
             print("Windows Defender real-time protection enabled")
             
             subprocess.run('powershell -Command "Set-MpPreference -EnableControlledFolderAccess Enabled"', 
-                          shell=True, check=True)
+                          # shell=True removed for security
+                        capture_output=True, check=True)
             print("Controlled Folder Access enabled")
             
         except subprocess.CalledProcessError as e:

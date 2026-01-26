@@ -75,8 +75,9 @@ class KernelLevelProtection:
         """Check if test signing is enabled for driver development"""
         try:
             import subprocess
+import shlex
             result = subprocess.run(['bcdedit', '/enum'], 
-                                  capture_output=True, text=True, shell=True)
+                                  capture_output=True, text=True)
             return 'testsigning' in result.stdout.lower() and 'yes' in result.stdout.lower()
         except:
             return False

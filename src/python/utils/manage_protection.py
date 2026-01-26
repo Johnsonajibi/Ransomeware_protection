@@ -6,6 +6,7 @@ import os
 import sqlite3
 from pathlib import Path
 import subprocess
+import shlex
 import time
 
 def get_database_path():
@@ -91,30 +92,31 @@ def lock_folder_manually(folder_path):
             try:
                 # Set system file attributes
                 result = subprocess.run(['attrib', '+S', '+H', '+R', str(file_path)], 
-                                      capture_output=True, shell=True, text=True)
+                                      capture_output=True, # shell=True removed for security
+                        capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"  ✅ System attributes applied")
                 
                 # Deny access to everyone
                 subprocess.run([
                     'icacls', str(file_path), '/deny', 'Everyone:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 print(f"  ✅ Everyone access denied")
                 
                 # Deny administrators
                 subprocess.run([
                     'icacls', str(file_path), '/deny', 'Administrators:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 print(f"  ✅ Administrator access denied")
                 
                 # Take ownership and deny
                 subprocess.run([
                     'takeown', '/F', str(file_path), '/A'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 
                 subprocess.run([
                     'icacls', str(file_path), '/deny', '*S-1-1-0:(F)', '/C'
-                ], capture_output=True, shell=True)
+                ], capture_output=True)
                 print(f"  ✅ Ownership protection applied")
                 
                 files_locked += 1
@@ -128,18 +130,18 @@ def lock_folder_manually(folder_path):
         
         # Set folder attributes
         subprocess.run(['attrib', '+S', '+H', '+R', str(folder_path)], 
-                      capture_output=True, shell=True)
+                      capture_output=True)
         print("  ✅ Folder system attributes applied")
         
         # Deny folder access
         subprocess.run([
             'icacls', str(folder_path), '/deny', 'Everyone:(OI)(CI)(F)', '/C'
-        ], capture_output=True, shell=True)
+        ], capture_output=True)
         print("  ✅ Folder access denied to Everyone")
         
         subprocess.run([
             'icacls', str(folder_path), '/deny', 'Administrators:(OI)(CI)(F)', '/C'
-        ], capture_output=True, shell=True)
+        ], capture_output=True)
         print("  ✅ Folder access denied to Administrators")
         
     except Exception as e:

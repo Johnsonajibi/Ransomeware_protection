@@ -7,6 +7,7 @@ Tests that administrators cannot bypass protection without USB token
 import os
 import sys
 import subprocess
+import shlex
 import time
 from pathlib import Path
 import ctypes
@@ -78,7 +79,8 @@ def test_admin_bypass_attempts(test_folder):
             result = subprocess.run(
                 attempt['command'], 
                 capture_output=True, 
-                shell=True, 
+                # shell=True removed for security
+                        capture_output=True, 
                 text=True,
                 timeout=15
             )

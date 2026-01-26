@@ -12,6 +12,7 @@ import win32api
 import win32con
 import ntsecuritycon as con
 import subprocess
+import shlex
 from pathlib import Path
 from typing import Optional, List, Dict
 import ctypes

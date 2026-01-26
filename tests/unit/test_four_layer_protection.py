@@ -24,6 +24,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+
+def safe_import(module_name: str):
+    """Safely import a module from whitelist"""
+    import importlib
+    
+    # Whitelist of allowed modules
+    ALLOWED_MODULES = {
+        'cryptography', 'sqlite3', 'tkinter', 'psutil', 'pywin32',
+        'requests', 'numpy', 'pandas', 'pytest', 'sys', 'os', 're',
+        'json', 'datetime', 'pathlib', 'logging', 'subprocess'
+    }
+    
+    if module_name not in ALLOWED_MODULES:
+        raise ValueError(f"Module {module_name} not in security whitelist")
+    
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        raise ImportError(f"Failed to import {module_name}: {e}")
+
 class FourLayerProtectionTester:
     def __init__(self):
         self.db_path = 'antiransomware.db'
