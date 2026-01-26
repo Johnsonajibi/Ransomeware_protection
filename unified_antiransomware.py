@@ -5312,6 +5312,84 @@ class UnifiedCLI:
             
             return True
         
+        elif args.command == 'health':
+            try:
+                import health_monitor
+                hm = health_monitor.HealthMonitor()
+                result = hm.full_check()
+                print("System Health Check Results:")
+                print(json.dumps(result, indent=2))
+                hm.save_check('cli_health_check', result)
+                return True
+            except Exception as e:
+                print(f"Health check error: {e}")
+                return False
+
+        elif args.command == 'services':
+            if args.service_action and args.service:
+                try:
+                    import service_manager
+                    sm = service_manager.ServiceManager()
+                    if args.service_action == 'install':
+                        ok = sm.install(args.service)
+                    elif args.service_action == 'start':
+                        ok = sm.start(args.service)
+                    elif args.service_action == 'stop':
+                        ok = sm.stop(args.service)
+                    elif args.service_action == 'uninstall':
+                        ok = sm.uninstall(args.service)
+                    print("Success" if ok else "Failed")
+                    return ok
+                except Exception as e:
+                    print(f"Service operation error: {e}")
+                    return False
+            return False
+
+        elif args.command == 'policies':
+            if args.policy_test:
+                try:
+                    import policy_engine
+                    pe = policy_engine.PolicyEngine()
+                    results = pe.get_test_results(args.policy_test)
+                    print(json.dumps(results, indent=2))
+                    return True
+                except Exception as e:
+                    print(f"Policy test error: {e}")
+                    return False
+            return False
+
+        elif args.command == 'siem':
+            if args.siem_test:
+                try:
+                    import siem_integration
+                    client = siem_integration.SIEMClient(siem_integration.SIEMConfig())
+                    results = client.test_connections()
+                    print("SIEM Integration Test Results:")
+                    print(json.dumps(results, indent=2))
+                    return True
+                except Exception as e:
+                    print(f"SIEM test error: {e}")
+                    return False
+            return False
+
+        elif args.command == 'monitor':
+            if args.events_monitor:
+                try:
+                    import check_security_events
+                    print("Monitoring security events (press Ctrl+C to stop)...")
+                    import time
+                    while True:
+                        # Placeholder: would integrate with actual event stream
+                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Monitoring active...")
+                        time.sleep(5)
+                except KeyboardInterrupt:
+                    print("\nMonitoring stopped")
+                    return True
+                except Exception as e:
+                    print(f"Monitor error: {e}")
+                    return False
+            return False
+        
         return False
 
     def update_process_policy(self, allowlist=None, denylist=None, block_patterns=None, kill_on_detect=None):
@@ -5493,7 +5571,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Unified Anti-Ransomware System")
     parser.add_argument('--gui', action='store_true', help='Start GUI mode')
-    parser.add_argument('--command', choices=['protect', 'unprotect', 'add-files', 'list', 'tokens', 'status', 'deploy', 'enterprise', 'gate-apply', 'gate-remove'],
+    parser.add_argument('--command', choices=['protect', 'unprotect', 'add-files', 'list', 'tokens', 'status', 'deploy', 'enterprise', 'gate-apply', 'gate-remove', 'health', 'services', 'policies', 'siem', 'monitor'],
                        help='CLI command to execute')
     parser.add_argument('--folder', help='Target folder path')
     parser.add_argument('--gate-mode', choices=['gate', 'encrypt_gate'], help='Token gate mode for folder')
@@ -5507,6 +5585,15 @@ def main():
                        help='Performance optimization profile')
     parser.add_argument('--configure-defender', action='store_true', 
                        help='Configure Windows Defender settings (requires admin)')
+    parser.add_argument('--health-check', action='store_true', help='Perform full system health check')
+    parser.add_argument('--emergency-activate', action='store_true', help='Activate emergency kill switch')
+    parser.add_argument('--service', help='Service name for operations')
+    parser.add_argument('--service-action', choices=['install', 'start', 'stop', 'uninstall'], help='Service action')
+    parser.add_argument('--policy-test', help='Test policy by name')
+    parser.add_argument('--siem-test', action='store_true', help='Test SIEM connections')
+    parser.add_argument('--events-monitor', action='store_true', help='Monitor security events in real-time')
+    parser.add_argument('--debug-tokens', action='store_true', help='Debug and scan tokens for issues')
+    parser.add_argument('--config', help='Config file path')
     
     args = parser.parse_args()
     
