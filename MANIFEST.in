@@ -1,0 +1,19 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include requirements.txt
+
+recursive-include src/antiransomware *.py *.pyi
+recursive-include src/antiransomware/drivers *.c *.h *.swift
+recursive-include config *.json *.yaml
+recursive-include docs *.md
+recursive-include tests *.py
+
+exclude reorganize.ps1
+exclude *.spec
+exclude *.log
+exclude *.db
+
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
