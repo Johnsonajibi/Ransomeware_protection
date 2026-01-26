@@ -37,9 +37,9 @@ A professional, hardware-gated, kernel-backed protection system for Windows that
 - Architecture Overview: [architecture](architecture.md)
 - Security Model & Hardening: [security-model](security-model.md)
 - API Reference: [api-reference](api-reference.md)
-- Quick Start: [guides/quickstart](guides/quickstart.md)
-- Deployment Guide: [guides/deployment](guides/deployment.md)
-- Operations Guide: [guides/operations](guides/operations.md)
+- Quick Start: [Quick Start Guide](guides/QUICK_START_GUIDE.md)
+- Deployment Guide: [deployment](guides/deployment.md)
+- Operations Guide: [operations](guides/operations.md)
 
 ## System Requirements
 - Windows 10 or 11
@@ -95,7 +95,7 @@ Description:
 
 ## Getting Started
 Review the Quick Start and system requirements, then proceed to deployment:
-- Quick Start: [guides/quickstart](guides/quickstart.md)
+- Quick Start: [Quick Start Guide](guides/QUICK_START_GUIDE.md)
 - Deployment Models: [guides/deployment](guides/deployment.md)
 
 ## Contact and Support
