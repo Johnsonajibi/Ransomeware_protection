@@ -3,11 +3,11 @@
 # Basic Site Configuration
 title: Anti-Ransomware Protection Platform
 description: Enterprise-grade ransomware protection with hardware-gated token enforcement, kernel-level monitoring, and behavioral threat detection.
-url: https://johnsonajibi.github.io/Ransomware_protection
+url: https://johnsonajibi.github.io
 baseurl: /Ransomware_protection
 
 # Repository Configuration
-repository: johnsonajibi/Ransomeware_protection
+repository: johnsonajibi/Ransomware_protection
 github:
   is_project_page: true
   is_user_page: false
@@ -30,21 +30,21 @@ kramdown:
 # Navigation
 nav:
   - title: Home
-    url: /
+    url: /Ransomware_protection/
   - title: Quick Start
-    url: /guides/quickstart
+    url: /Ransomware_protection/guides/quickstart
   - title: Architecture
-    url: /architecture
+    url: /Ransomware_protection/architecture
   - title: API Reference
-    url: /api-reference
+    url: /Ransomware_protection/api-reference
   - title: Deployment
-    url: /guides/deployment
+    url: /Ransomware_protection/guides/deployment
   - title: Security Model
-    url: /security-model
+    url: /Ransomware_protection/security-model
   - title: Operations
-    url: /guides/operations
+    url: /Ransomware_protection/guides/operations
   - title: GitHub Repo
-    url: https://github.com/johnsonajibi/Ransomeware_protection
+    url: https://github.com/johnsonajibi/Ransomware_protection
 
 # Build Configuration
 exclude:
